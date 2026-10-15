@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Circular glow backdrop in center -->
+    <path
+        android:fillColor="#1538BDF8"
+        android:pathData="M54,26 A28,28 0 1,0 54,82 A28,28 0 1,0 54,26 Z" />
+
+    <!-- Mototaxi / Rickshaw silhouette styled for high-end mobility operations -->
+    <!-- Cabin & roof -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M30,42 C30,37 34,35 44,35 L68,35 C74,35 77,38 78,44 L80,52 C81,55 79,57 76,57 L72,57 L72,67 C72,68.5 70.8,69.5 69,69.5 L34,69.5 C32.5,69.5 31,68.5 31,67 L31,56 C30.5,54 30,48 30,42 Z" />
+
+    <!-- Windshield & window cutout -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M52,40 L68,40 C70.5,40 71.5,41.5 72,44 L73.5,52 L52,52 Z" />
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M36,40 L48,40 L48,52 L35,52 C35,46 35.5,41.5 36,40 Z" />
+
+    <!-- Front headlight glow -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M78,53 L82,53 C83,53 84,54 84,55 L84,56 C84,57 83,58 82,58 L77.5,58 Z" />
+
+    <!-- Handlebars / steering fork -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M72,58 L77,69" />
+
+    <!-- Front wheel -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M77,66 A7,7 0 1,0 77,80 A7,7 0 1,0 77,66 Z" />
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M77,70 A3,3 0 1,0 77,76 A3,3 0 1,0 77,70 Z" />
+
+    <!-- Rear wheels (dual / left-right perspective) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,66 A7,7 0 1,0 38,80 A7,7 0 1,0 38,66 Z" />
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M38,70 A3,3 0 1,0 38,76 A3,3 0 1,0 38,70 Z" />
+
+    <!-- Speed / fleet accent lines -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M24,46 L27,46 M22,53 L26,53 M25,60 L28,60" />
+</vector>

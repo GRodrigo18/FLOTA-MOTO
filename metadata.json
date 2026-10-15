@@ -1,0 +1,7 @@
+{
+  "name": "MotoFlota Pro",
+  "description": "Sistema profesional de gestión de flota de mototaxis, contratos de alquiler, control de SOAT, finanzas e inventario de taller.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
