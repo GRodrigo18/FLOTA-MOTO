@@ -67,4 +67,23 @@ class FleetDatesTest {
         // La fecha sugerida sí la entienden las alertas
         assertEquals(92, FleetDates.daysUntil("2027-02-05", hoy))
     }
+
+    @Test
+    fun `fin de contrato y SOAT se calculan solos`() {
+        assertEquals("2027-02-05", FleetDates.contractEnd("2026-11-05", "3 Meses"))
+        assertEquals("2026-12-05", FleetDates.contractEnd("2026-11-05", "1 Mes"))
+        assertEquals("2027-05-05", FleetDates.contractEnd("2026-11-05", "6 Meses"))
+        assertEquals("2027-11-05", FleetDates.contractEnd("2026-11-05", "1 Año"))
+        // Fin de mes: 30 nov + 3 meses = 28 feb (no 2 de marzo)
+        assertEquals("2027-02-28", FleetDates.contractEnd("2026-11-30", "3 Meses"))
+        assertEquals("2027-11-05", FleetDates.soatEnd("05/11/2026"))
+        assertNull(FleetDates.contractEnd("fecha mala", "3 Meses"))
+    }
+
+    @Test
+    fun `fecha legible`() {
+        assertEquals("05 nov 2026", FleetDates.pretty("2026-11-05"))
+        assertEquals("31 dic 2026", FleetDates.pretty("31/12/2026"))
+        assertEquals("sin fecha", FleetDates.pretty("sin fecha"))
+    }
 }
