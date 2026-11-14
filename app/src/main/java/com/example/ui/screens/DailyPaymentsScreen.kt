@@ -84,6 +84,7 @@ import com.example.data.model.FleetUnitEntity
 import com.example.ui.DialogType
 import com.example.ui.FleetUiState
 import com.example.ui.FleetViewModel
+import com.example.ui.theme.AppText
 import com.example.ui.theme.*
 import com.example.ui.theme.WarningAmber
 import com.example.ui.theme.WarningAmberBg
@@ -192,7 +193,7 @@ fun DailyPaymentsScreen(
                             )
                         }
                     },
-                    modifier = Modifier.testTag("subtab_debt_management")
+                    modifier = Modifier.tourTarget("debts_tab").testTag("subtab_debt_management")
                 )
             }
         }
@@ -206,991 +207,7 @@ fun DailyPaymentsScreen(
 }
 
 @Composable
-private fun DailyChecklistTabContent(
-    state: FleetUiState,
-    viewModel: FleetViewModel
-) {
-    val totalMotos = state.units.size
-    val pagadasCount = state.conteoPagadosHoy
-    val porcentajePagado = if (totalMotos > 0) pagadasCount.toFloat() / totalMotos else 0f
-    val totalEsperado = state.units.sumOf { it.cuotaDiaria }
-
-    var showEditCuotaDialog by remember { mutableStateOf(false) }
-    var cuotaToEditInput by remember { mutableStateOf(state.defaultCuotaDiaria.toString()) }
-    var unitForCuotaEdit by remember { mutableStateOf<FleetUnitEntity?>(null) }
-    var unitCuotaInput by remember { mutableStateOf("35.0") }
-
-    val todayFormatted = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
-    val isFutureDate = state.selectedDate > todayFormatted
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("daily_payments_list"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Selector de Fecha
-        item {
-            DateSelectorBar(
-                selectedDate = state.selectedDate,
-                onDateSelected = { viewModel.setSelectedDate(it) }
-            )
-        }
-
-        if (isFutureDate) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = CyanAccent.copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = null,
-                            tint = CyanAccent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "CALENDARIO: MODO PAGO ADELANTADO",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = CyanAccent
-                            )
-                            Text(
-                                text = "Marcando cuotas para el ${state.selectedDate}. Se registrarán con fecha adelantada en caja y en el historial.",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Resumen del día
-        item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = NavySurface
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "CONTROL DIARIO DE CUOTAS",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = CyanAccent,
-                                    letterSpacing = 1.sp
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = formatDayWithCalendarNumber(state.selectedDate),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Cuota base: S/ ${"%.2f".format(state.defaultCuotaDiaria)}",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Surface(
-                                    onClick = {
-                                        cuotaToEditInput = state.defaultCuotaDiaria.toString()
-                                        showEditCuotaDialog = true
-                                    },
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = CyanAccent.copy(alpha = 0.2f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Editar cuota", tint = CyanAccent, modifier = Modifier.size(11.dp))
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text("Modificar", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = EmeraldGreen.copy(alpha = 0.2f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, EmeraldGreen.copy(alpha = 0.5f))
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalAlignment = Alignment.End
-                            ) {
-                                Text(
-                                    text = "COBRADO HOY",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = EmeraldGreen
-                                )
-                                Text(
-                                    text = "S/ ${"%.2f".format(state.totalCobradoHoy)}",
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = EmeraldGreen
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    LinearProgressIndicator(
-                        progress = { porcentajePagado },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = EmeraldGreen,
-                        trackColor = Color.White.copy(alpha = 0.1f)
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "$pagadasCount de $totalMotos motos cobradas (${(porcentajePagado * 100).toInt()}%)",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        )
-                        Text(
-                            text = "Meta: S/ ${"%.2f".format(totalEsperado)}",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { viewModel.markAllDailyPayments(true) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("btn_mark_all_paid"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = EmeraldGreen,
-                                contentColor = Color.Black
-                            ),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Marcar Todas", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { viewModel.markAllDailyPayments(false) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("btn_reset_checklist"),
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                        ) {
-                            Text("Desmarcar", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Lista de Motos en el Checklist
-        if (state.units.isEmpty()) {
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ElectricRickshaw,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "No hay motos registradas en la flota",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Agrega tus unidades en el módulo Flota para iniciar el registro diario de cobros.",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(
-                            onClick = { viewModel.openDialog(DialogType.ADD_UNIT) },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Color.Black)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("+ Registrar Primera Moto", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        } else {
-            items(state.units, key = { "unit_chk_${it.id}" }) { unit ->
-                val payment = state.pagosDelDiaSeleccionado.firstOrNull { it.unitPlaca == unit.placa }
-                val isPaid = payment != null
-
-                DailyChecklistUnitCard(
-                    unit = unit,
-                    selectedDate = state.selectedDate,
-                    isPaid = isPaid,
-                    paidTime = payment?.hora,
-                    onToggle = { newPaidState ->
-                        viewModel.toggleDailyPayment(unit, newPaidState)
-                    },
-                    onCardClick = {
-                        viewModel.selectUnit(unit)
-                    },
-                    onEditCuota = {
-                        unitForCuotaEdit = unit
-                        unitCuotaInput = unit.cuotaDiaria.toString()
-                    },
-                    onAbonarDeuda = {
-                        viewModel.openDialog(DialogType.ADD_DEBT_ABONO, unit)
-                    }
-                )
-            }
-        }
-    }
-
-    // Diálogo para editar Cuota Diaria Base
-    if (showEditCuotaDialog) {
-        AlertDialog(
-            onDismissRequest = { showEditCuotaDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PriceCheck, contentDescription = null, tint = CyanAccent)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Modificar Cuota Diaria Base", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Configura el cobro diario por defecto para la flota (ej. S/ 35.00, S/ 40.00).",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    OutlinedTextField(
-                        value = cuotaToEditInput,
-                        onValueChange = { cuotaToEditInput = it },
-                        label = { Text("Cuota Base Diaria (S/)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { cuotaToEditInput = "35.0" },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("S/ 35.00", fontSize = 12.sp)
-                        }
-                        OutlinedButton(
-                            onClick = { cuotaToEditInput = "40.0" },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("S/ 40.00", fontSize = 12.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val newCuota = cuotaToEditInput.toDoubleOrNull() ?: 35.0
-                        viewModel.updateDefaultCuotaDiaria(newCuota)
-                        showEditCuotaDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Color.Black)
-                ) {
-                    Text("Aplicar a Flota", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showEditCuotaDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
-        )
-    }
-
-    // Diálogo para editar cuota de una moto específica
-    unitForCuotaEdit?.let { targetUnit ->
-        AlertDialog(
-            onDismissRequest = { unitForCuotaEdit = null },
-            title = {
-                Text("Cuota de ${targetUnit.nombreMoto} (${targetUnit.placa})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Personaliza la cuota diaria para esta unidad específica:", fontSize = 12.sp)
-                    OutlinedTextField(
-                        value = unitCuotaInput,
-                        onValueChange = { unitCuotaInput = it },
-                        label = { Text("Cuota Diaria (S/)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val cuotaVal = unitCuotaInput.toDoubleOrNull() ?: targetUnit.cuotaDiaria
-                        viewModel.updateUnitCuota(targetUnit, cuotaVal)
-                        unitForCuotaEdit = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Color.Black)
-                ) {
-                    Text("Guardar", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { unitForCuotaEdit = null }) {
-                    Text("Cancelar")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun DailyChecklistUnitCard(
-    unit: FleetUnitEntity,
-    selectedDate: String,
-    isPaid: Boolean,
-    paidTime: String?,
-    onToggle: (Boolean) -> Unit,
-    onCardClick: () -> Unit,
-    onEditCuota: () -> Unit = {},
-    onAbonarDeuda: () -> Unit = {}
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPaid) EmeraldGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            width = if (isPaid) 1.5.dp else 1.dp,
-            color = if (isPaid) EmeraldGreen.copy(alpha = 0.6f) else SurfaceBorder
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle(!isPaid) }
-            .testTag("unit_checklist_card_${unit.placa}")
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Checkbox interactivo grande
-            Checkbox(
-                checked = isPaid,
-                onCheckedChange = { onToggle(it) },
-                colors = CheckboxDefaults.colors(
-                    checkedColor = EmeraldGreen,
-                    checkmarkColor = Color.Black,
-                    uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
-                    .size(36.dp)
-                    .testTag("checkbox_paid_${unit.placa}")
-            )
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Datos de la moto identificada por nombre
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = unit.nombreMoto.ifEmpty { "Moto ${unit.id}" },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = NavyPrimary.copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                    ) {
-                        Text(
-                            text = unit.placa,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "Chofer: ${unit.cliente.ifBlank { "Sin asignar" }}",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = "Cobro: ${formatShortDayLabel(selectedDate)} (Calendario)",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    maxLines = 1
-                )
-
-                if (unit.deudaTotal > 0.0) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = WarningAmberBg,
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, WarningAmberText.copy(alpha = 0.4f))
-                        ) {
-                            Text(
-                                text = "Debe: S/ ${"%.2f".format(unit.deudaTotal)}",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = WarningAmberText,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                        Surface(
-                            onClick = onAbonarDeuda,
-                            shape = RoundedCornerShape(4.dp),
-                            color = WarningAmber.copy(alpha = 0.2f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, WarningAmber.copy(alpha = 0.5f))
-                        ) {
-                            Text(
-                                text = "Abonar",
-                                color = WarningAmberText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Lado Derecho: Cuota de S/ 35.00 en caja destacada y estado alineados sin descuadres
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // Caja destacada de la cuota diaria (S/ 35.00)
-                Surface(
-                    onClick = onEditCuota,
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isPaid) SuccessGreenBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isPaid) SuccessGreenText.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "S/ ${"%.2f".format(unit.cuotaDiaria)}",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isPaid) SuccessGreenText else MaterialTheme.colorScheme.onSurface,
-                                fontSize = 15.sp
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Editar cuota",
-                            tint = CyanAccent,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-
-                // Insignia de estado: PAGADO / PENDIENTE
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (isPaid) SuccessGreenBg else DangerRedBg,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isPaid) SuccessGreenText.copy(alpha = 0.3f) else DangerRedText.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Text(
-                        text = if (isPaid) (paidTime ?: "PAGADO") else "PENDIENTE",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isPaid) SuccessGreenText else DangerRedText
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DebtManagementTabContent(
-    state: FleetUiState,
-    viewModel: FleetViewModel
-) {
-    var filterByPlaca by remember { mutableStateOf<String?>(null) }
-
-    val filteredUnits = if (filterByPlaca == null) {
-        state.units
-    } else {
-        state.units.filter { it.placa == filterByPlaca }
-    }
-
-    val filteredRecords = if (filterByPlaca == null) {
-        state.debtRecords
-    } else {
-        state.debtRecords.filter { it.unitPlaca == filterByPlaca }
-    }
-
-    val totalDeudaGeneral = state.units.sumOf { it.deudaTotal }
-    val totalGarantiaGeneral = state.units.sumOf { it.deudaGarantia }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("debt_management_list"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Resumen total de deudas
-        item(key = "debt_header_summary") {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = NavySurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "CONTROL DE CUENTAS CORRIENTES Y DEUDAS",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = CyanAccent,
-                            letterSpacing = 1.sp
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(
-                                text = "Deuda Total Flota",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color.White.copy(alpha = 0.7f)
-                                )
-                            )
-                            Text(
-                                text = "S/ ${"%.2f".format(totalDeudaGeneral)}",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (totalDeudaGeneral > 0) WarningAmberText else SuccessGreenText
-                                )
-                            )
-                        }
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "Garantías Pendientes",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color.White.copy(alpha = 0.7f)
-                                )
-                            )
-                            Text(
-                                text = "S/ ${"%.2f".format(totalGarantiaGeneral)}",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = CyanAccent
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Título de Unidades
-        item(key = "debt_header_units") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Saldos por Moto",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-                if (filterByPlaca != null) {
-                    OutlinedButton(
-                        onClick = { filterByPlaca = null },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Ver todas", fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        // Unidades con sus botones de Cargo y Abono
-        items(filteredUnits, key = { "debt_unit_${it.id}" }) { unit ->
-            DebtUnitCard(
-                unit = unit,
-                isSelected = filterByPlaca == unit.placa,
-                onCardClick = {
-                    filterByPlaca = if (filterByPlaca == unit.placa) null else unit.placa
-                },
-                onAddCargo = {
-                    viewModel.openDialog(DialogType.ADD_DEBT_CARGO, unit)
-                },
-                onAddAbono = {
-                    viewModel.openDialog(DialogType.ADD_DEBT_ABONO, unit)
-                }
-            )
-        }
-
-        // Historial de Movimientos
-        item(key = "debt_header_history") {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = if (filterByPlaca == null) "Últimos Movimientos de Deudas" else "Movimientos de la Moto Seleccionada",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            )
-        }
-
-        if (filteredRecords.isEmpty()) {
-            item(key = "debt_empty_records") {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(modifier = Modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "No hay registros de deudas o abonos aún.",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        } else {
-            items(filteredRecords, key = { "debt_rec_${it.id}" }) { record ->
-                DebtRecordRow(record = record)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DebtUnitCard(
-    unit: FleetUnitEntity,
-    isSelected: Boolean,
-    onCardClick: () -> Unit,
-    onAddCargo: () -> Unit,
-    onAddAbono: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) NavyPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) CyanAccent else SurfaceBorder
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCardClick() }
-            .testTag("debt_unit_card_${unit.placa}")
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = unit.nombreMoto.ifEmpty { "Moto ${unit.id}" },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 17.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "(${unit.placa})",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (unit.deudaTotal > 0.0) WarningAmberBg else SuccessGreenBg,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (unit.deudaTotal > 0.0) WarningAmberText.copy(alpha = 0.3f) else SuccessGreenText.copy(alpha = 0.3f))
-                ) {
-                    Text(
-                        text = if (unit.deudaTotal > 0.0) "DEBE S/ ${"%.2f".format(unit.deudaTotal)}" else "AL DÍA (S/ 0.00)",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (unit.deudaTotal > 0.0) WarningAmberText else SuccessGreenText
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Placa: ${unit.placa} • Estado: ${unit.estado}",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
-
-            if (unit.deudaGarantia > 0.0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Saldo de Garantía pendiente: S/ ${"%.2f".format(unit.deudaGarantia)} de S/ 200.00",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onAddCargo,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, WarningAmberText.copy(alpha = 0.8f)),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = WarningAmberText)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("+ Cargar Deuda", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Button(
-                    onClick = onAddAbono,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SuccessGreenText,
-                        contentColor = Color.White
-                    )
-                ) {
-                    Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Abonar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DebtRecordRow(record: DebtRecordEntity) {
-    val isCargo = record.tipo == "CARGO"
-
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(if (isCargo) WarningAmberBg else SuccessGreenBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isCargo) Icons.Default.Add else Icons.Default.Remove,
-                    contentDescription = null,
-                    tint = if (isCargo) WarningAmberText else SuccessGreenText,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "${record.nombreMoto} (${record.unitPlaca}) - ${if (isCargo) "Cargo" else "Abono"}",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-                Text(
-                    text = record.motivo,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-                Text(
-                    text = record.fecha,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-            }
-
-            Text(
-                text = "${if (isCargo) "+" else "-"} S/ ${"%.2f".format(record.monto)}",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isCargo) WarningAmberText else SuccessGreenText
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun DateSelectorBar(
+internal fun DateSelectorBar(
     selectedDate: String,
     onDateSelected: (String) -> Unit
 ) {
@@ -1235,7 +252,7 @@ private fun DateSelectorBar(
                     FilterChip(
                         selected = selectedDate == yesterdayStr,
                         onClick = { onDateSelected(yesterdayStr) },
-                        label = { Text("Ayer (${formatShortDayLabel(yesterdayStr)})", fontSize = 11.sp) },
+                        label = { Text("Ayer (${formatShortDayLabel(yesterdayStr)})", fontSize = AppText.Small) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black
@@ -1244,7 +261,7 @@ private fun DateSelectorBar(
                     FilterChip(
                         selected = selectedDate == todayStr,
                         onClick = { onDateSelected(todayStr) },
-                        label = { Text("HOY (${formatShortDayLabel(todayStr)})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        label = { Text("HOY (${formatShortDayLabel(todayStr)})", fontSize = AppText.Small, fontWeight = FontWeight.Bold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black
@@ -1253,7 +270,7 @@ private fun DateSelectorBar(
                     FilterChip(
                         selected = selectedDate == tomorrowStr,
                         onClick = { onDateSelected(tomorrowStr) },
-                        label = { Text("Mañana (${formatShortDayLabel(tomorrowStr)})", fontSize = 11.sp) },
+                        label = { Text("Mañana (${formatShortDayLabel(tomorrowStr)})", fontSize = AppText.Small) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black
@@ -1301,14 +318,14 @@ private fun DateSelectorBar(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = formatDayWithCalendarNumber(selectedDate),
-                            fontSize = 12.sp,
+                            fontSize = AppText.Body,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Text(
                         text = "Toca para abrir calendario y elegir cualquier día",
-                        fontSize = 10.sp,
+                        fontSize = AppText.Small,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -1359,7 +376,7 @@ private fun DateSelectorBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = CyanAccent)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Calendario de Cobros", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Calendario de Cobros", fontWeight = FontWeight.Bold, fontSize = AppText.Title)
                 }
             },
             text = {
@@ -1373,7 +390,7 @@ private fun DateSelectorBar(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             IconButton(
                                 onClick = {
                                     if (currentMonth == 1) {
@@ -1393,12 +410,12 @@ private fun DateSelectorBar(
                                 Text(
                                     text = "${monthFullNames.getOrElse(currentMonth - 1) { "" }} $currentYear",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
+                                    fontSize = AppText.Title,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = "Día $currentDay seleccionado",
-                                    fontSize = 10.sp,
+                                    fontSize = AppText.Small,
                                     color = CyanAccent,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -1427,14 +444,14 @@ private fun DateSelectorBar(
                                 shape = RoundedCornerShape(4.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
-                                Text("-1a", fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(4.dp))
+                                Text("-1a", fontSize = AppText.Small, fontWeight = FontWeight.Bold, modifier = Modifier.padding(4.dp))
                             }
                             Surface(
                                 onClick = { currentYear++ },
                                 shape = RoundedCornerShape(4.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
-                                Text("+1a", fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(4.dp))
+                                Text("+1a", fontSize = AppText.Small, fontWeight = FontWeight.Bold, modifier = Modifier.padding(4.dp))
                             }
                             Surface(
                                 onClick = {
@@ -1446,7 +463,7 @@ private fun DateSelectorBar(
                                 shape = RoundedCornerShape(4.dp),
                                 color = CyanAccent.copy(alpha = 0.18f)
                             ) {
-                                Text("Hoy", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyanAccent, modifier = Modifier.padding(4.dp))
+                                Text("Hoy", fontSize = AppText.Small, fontWeight = FontWeight.Bold, color = CyanAccent, modifier = Modifier.padding(4.dp))
                             }
                         }
                     }
@@ -1456,7 +473,7 @@ private fun DateSelectorBar(
                         listOf("L", "M", "M", "J", "V", "S", "D").forEach { d ->
                             Text(
                                 text = d,
-                                fontSize = 11.sp,
+                                fontSize = AppText.Small,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1487,7 +504,7 @@ private fun DateSelectorBar(
                                         ) {
                                             Text(
                                                 text = "$dNum",
-                                                fontSize = 11.sp,
+                                                fontSize = AppText.Small,
                                                 fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
                                                 color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
                                             )
@@ -1507,7 +524,7 @@ private fun DateSelectorBar(
                     ) {
                         Text(
                             text = "Fecha seleccionada: %04d-%02d-%02d".format(currentYear, currentMonth, currentDay),
-                            fontSize = 12.sp,
+                            fontSize = AppText.Body,
                             fontWeight = FontWeight.Bold,
                             color = CyanAccent,
                             modifier = Modifier.padding(8.dp),

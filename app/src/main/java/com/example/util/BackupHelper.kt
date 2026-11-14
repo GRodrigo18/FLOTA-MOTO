@@ -3,11 +3,13 @@ package com.example.util
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import com.example.data.model.DailyPaymentEntity
 import com.example.data.model.DebtRecordEntity
 import com.example.data.model.DetailedMaintenanceEntity
 import com.example.data.model.FinanceMovementEntity
 import com.example.data.model.FleetUnitEntity
+import com.example.data.model.InventoryBatchEntity
 import com.example.data.model.InventoryItemEntity
 import com.example.data.model.MaintenanceTaskEntity
 import com.example.data.model.UnitExpenseEntity
@@ -28,7 +30,9 @@ data class FleetBackupPayload(
     val unitExpenses: List<UnitExpenseEntity>,
     val financeMovements: List<FinanceMovementEntity>,
     val inventoryItems: List<InventoryItemEntity>,
-    val maintenanceTasks: List<MaintenanceTaskEntity>
+    val maintenanceTasks: List<MaintenanceTaskEntity>,
+    // Lotes de compra de aceite/llantas (antes no se respaldaban y se perdían al restaurar)
+    val inventoryBatches: List<InventoryBatchEntity> = emptyList()
 )
 
 object BackupHelper {
@@ -63,6 +67,7 @@ object BackupHelper {
             obj.put("revDiasRestantes", u.revDiasRestantes)
             obj.put("kilometraje", u.kilometraje)
             obj.put("observaciones", u.observaciones)
+            obj.put("revisionTecnicaMesRealizada", u.revisionTecnicaMesRealizada)
             unitsArray.put(obj)
         }
         root.put("units", unitsArray)
@@ -114,6 +119,7 @@ object BackupHelper {
             obj.put("costoCana", m.costoCana)
             obj.put("costoBajadaMotorCompleto", m.costoBajadaMotorCompleto)
             obj.put("costoBajadaMedioMotor", m.costoBajadaMedioMotor)
+            obj.put("costoCablesCambio", m.costoCablesCambio)
             obj.put("costoOtros", m.costoOtros)
             obj.put("botellasAceite", m.botellasAceite)
             obj.put("precioBotellaAceite", m.precioBotellaAceite)
@@ -187,13 +193,29 @@ object BackupHelper {
         }
         root.put("maintenanceTasks", tasksArray)
 
+        // Inventory Batches (lotes de compra)
+        val batchesArray = JSONArray()
+        payload.inventoryBatches.forEach { b ->
+            val obj = JSONObject()
+            obj.put("categoria", b.categoria)
+            obj.put("nombre", b.nombre)
+            obj.put("cantidadInicial", b.cantidadInicial)
+            obj.put("cantidadDisponible", b.cantidadDisponible)
+            obj.put("precioUnitario", b.precioUnitario)
+            obj.put("fecha", b.fecha)
+            obj.put("timestamp", b.timestamp)
+            batchesArray.put(obj)
+        }
+        root.put("inventoryBatches", batchesArray)
+        root.put("formatVersion", 2)
+
         return root.toString(2)
     }
 
     fun parseFromJson(jsonString: String): FleetBackupPayload {
         val root = JSONObject(jsonString)
         val exportDate = root.optString("exportDate", "Desconocido")
-        val userEmail = root.optString("userEmail", "admin@motoflota.pe")
+        val userEmail = root.optString("userEmail", "")
 
         val units = mutableListOf<FleetUnitEntity>()
         val unitsArray = root.optJSONArray("units") ?: JSONArray()
@@ -220,7 +242,8 @@ object BackupHelper {
                     revVence = obj.optString("revVence", ""),
                     revDiasRestantes = obj.optInt("revDiasRestantes", 60),
                     kilometraje = obj.optInt("kilometraje", 0),
-                    observaciones = obj.optString("observaciones", "")
+                    observaciones = obj.optString("observaciones", ""),
+                    revisionTecnicaMesRealizada = obj.optBoolean("revisionTecnicaMesRealizada", true)
                 )
             )
         }
@@ -278,6 +301,7 @@ object BackupHelper {
                     costoCana = obj.optDouble("costoCana", 0.0),
                     costoBajadaMotorCompleto = obj.optDouble("costoBajadaMotorCompleto", 0.0),
                     costoBajadaMedioMotor = obj.optDouble("costoBajadaMedioMotor", 0.0),
+                    costoCablesCambio = obj.optDouble("costoCablesCambio", 0.0), // copias viejas: 0
                     costoOtros = obj.optDouble("costoOtros", 0.0),
                     botellasAceite = obj.optInt("botellasAceite", 2),
                     precioBotellaAceite = obj.optDouble("precioBotellaAceite", 25.0),
@@ -359,6 +383,24 @@ object BackupHelper {
             )
         }
 
+        // Copias viejas no traen lotes: queda la lista vacía
+        val inventoryBatches = mutableListOf<InventoryBatchEntity>()
+        val batchesArray = root.optJSONArray("inventoryBatches") ?: JSONArray()
+        for (i in 0 until batchesArray.length()) {
+            val obj = batchesArray.getJSONObject(i)
+            inventoryBatches.add(
+                InventoryBatchEntity(
+                    categoria = obj.optString("categoria", ""),
+                    nombre = obj.optString("nombre", ""),
+                    cantidadInicial = obj.optInt("cantidadInicial", 0),
+                    cantidadDisponible = obj.optInt("cantidadDisponible", 0),
+                    precioUnitario = obj.optDouble("precioUnitario", 0.0),
+                    fecha = obj.optString("fecha", ""),
+                    timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                )
+            )
+        }
+
         return FleetBackupPayload(
             exportDate = exportDate,
             userEmail = userEmail,
@@ -369,13 +411,23 @@ object BackupHelper {
             unitExpenses = unitExpenses,
             financeMovements = financeMovements,
             inventoryItems = inventoryItems,
-            maintenanceTasks = maintenanceTasks
+            maintenanceTasks = maintenanceTasks,
+            inventoryBatches = inventoryBatches
         )
+    }
+
+    /** Borra copias con datos que ya no hacen falta: deja solo las [keep] más recientes. */
+    private fun pruneFiles(dir: File, prefix: String, keep: Int) {
+        dir.listFiles { f -> f.isFile && f.name.startsWith(prefix) && f.name != "motoflota_backup_latest.json" }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(keep)
+            ?.forEach { it.delete() }
     }
 
     fun saveLocalBackupFile(context: Context, jsonString: String): File {
         val dateStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val dir = context.filesDir
+        pruneFiles(dir, "motoflota_backup_", keep = 4)
         val backupFile = File(dir, "motoflota_backup_$dateStamp.json")
         backupFile.writeText(jsonString)
 
@@ -391,6 +443,21 @@ object BackupHelper {
         return if (latestFile.exists()) latestFile.readText() else null
     }
 
+    /**
+     * Antes el respaldo se pegaba completo como TEXTO dentro del correo: con muchas motos y pagos
+     * el enlace "mailto:" se corta (la mayoría de apps de correo limitan su longitud) y el
+     * respaldo llegaba incompleto o el correo no se abría. Ahora se adjunta como archivo .json real.
+     */
+    private fun backupFileUri(context: Context, jsonBackup: String): Uri {
+        val dir = File(context.cacheDir, "respaldos").apply { mkdirs() }
+        // Los adjuntos de correos anteriores ya se enviaron: no se dejan copias de los datos en caché.
+        pruneFiles(dir, "motoflota_backup_", keep = 1)
+        val dateStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val file = File(dir, "motoflota_backup_$dateStamp.json")
+        file.writeText(jsonBackup)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    }
+
     fun sendBackupViaEmail(
         context: Context,
         recipientEmail: String,
@@ -400,44 +467,35 @@ object BackupHelper {
         val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
         val subject = "Copia de Seguridad MotoFlota Pro • $dateStr"
         val body = """
-            Estimado Administrador,
-            
-            Adjuntamos el respaldo completo de la flota MotoFlota Pro.
+            Adjunto el respaldo completo de la flota MotoFlota Pro (archivo .json).
+
             Fecha de generación: $dateStr
-            Cuenta: $recipientEmail
-            
-            --- RESUMEN DE LA FLOTA ---
+
+            --- RESUMEN ---
             $summary
-            
-            --- DATOS COMPLETOS DE RESPALDO (FORMATO JSON PARA RESTAURACIÓN) ---
-            $jsonBackup
-            
-            Para restaurar estos datos en cualquier momento o teléfono:
-            1. Abra MotoFlota Pro.
-            2. Vaya a 'Copia de Seguridad en la Nube / Local'.
-            3. Pegue este código JSON o seleccione Restaurar.
+
+            Para recuperar estos datos en cualquier teléfono:
+            1. Descargue este archivo adjunto.
+            2. Abra MotoFlota Pro › Menú › Respaldos › Recuperar datos › De un archivo.
+            3. Elija el archivo descargado.
         """.trimIndent()
 
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:$recipientEmail")
+        val uri = backupFileUri(context, jsonBackup)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(recipientEmail))
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = android.content.ClipData.newRawUri("respaldo", uri)
+            // Antes "flags = NEW_TASK" se escribía DESPUÉS del permiso de lectura y lo borraba:
+            // el correo se abría pero no podía leer el adjunto.
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
-
-        try {
-            context.startActivity(Intent.createChooser(intent, "Enviar Respaldo por Correo"))
-        } catch (_: Exception) {
-            // Fallback con ACTION_SEND
-            val fallback = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_EMAIL, arrayOf(recipientEmail))
-                putExtra(Intent.EXTRA_SUBJECT, subject)
-                putExtra(Intent.EXTRA_TEXT, body)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(Intent.createChooser(fallback, "Compartir Respaldo"))
+        val chooser = Intent.createChooser(intent, "Enviar respaldo por correo").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+        context.startActivity(chooser)
     }
 
     fun shareBackupToGoogleDriveOrFiles(
@@ -445,13 +503,17 @@ object BackupHelper {
         jsonBackup: String,
         summary: String
     ) {
-        val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        val uri = backupFileUri(context, jsonBackup)
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "Copia de Seguridad MotoFlota Pro • $dateStr")
-            putExtra(Intent.EXTRA_TEXT, "--- RESUMEN MOTOFLOTA ---\n$summary\n\n--- ARCHIVO JSON DE RESPALDO ---\n$jsonBackup")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, summary)
+            clipData = android.content.ClipData.newRawUri("respaldo", uri)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
-        context.startActivity(Intent.createChooser(intent, "Guardar en Google Drive / Compartir"))
+        val chooser = Intent.createChooser(intent, "Guardar en Drive / Compartir").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(chooser)
     }
 }

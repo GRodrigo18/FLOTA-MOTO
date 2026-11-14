@@ -1,19 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copia de seguridad de Android (Android 12 y superior).
+  Se respalda en la cuenta de Google del teléfono: la base de datos de MotoFlota y sus ajustes
+  (usuarios con PIN cifrado, correo, preferencias). Si se reinstala la app en un teléfono con la
+  misma cuenta de Google, todo vuelve solo.
+  No se respaldan: cachés, archivos temporales de correo ni las copias previas a actualizaciones.
+  Si el teléfono tiene bloqueo de pantalla, Google la guarda cifrada de extremo a extremo.
 -->
 <data-extraction-rules>
-    <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+    <cloud-backup disableIfNoEncryptionCapabilities="false">
+        <include domain="database" path="motoflota_database.db" />
+        <include domain="database" path="motoflota_database.db-wal" />
+        <include domain="sharedpref" path="moto_flota_prefs.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="database" path="motoflota_database.db" />
+        <include domain="database" path="motoflota_database.db-wal" />
+        <include domain="sharedpref" path="moto_flota_prefs.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

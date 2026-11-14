@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.AppText
 import com.example.ui.theme.DangerRedBg
 import com.example.ui.theme.DangerRedText
 import com.example.ui.theme.DarkDangerRed
@@ -53,31 +54,24 @@ fun PlateBadge(
 
     Surface(
         modifier = modifier
-            .border(1.5.dp, borderColor, RoundedCornerShape(8.dp)),
-        shape = RoundedCornerShape(8.dp),
+            .border(1.dp, borderColor, RoundedCornerShape(6.dp)),
+        shape = RoundedCornerShape(6.dp),
         color = badgeBg
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(borderColor)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = placa,
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 1.2.sp,
-                    color = textColor
-                )
-            )
-        }
+        // Placa en una sola línea y compacta: antes, en filas angostas, las letras se apilaban
+        // una debajo de otra ("A D A S J D") y la fila se volvía muy alta.
+        Text(
+            text = placa,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.5.sp,
+                color = textColor
+            ),
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }
 
@@ -113,7 +107,7 @@ fun StatusBadge(
             Text(
                 text = estado,
                 color = textColor,
-                fontSize = 12.sp,
+                fontSize = AppText.Body,
                 fontWeight = FontWeight.ExtraBold
             )
         }
@@ -174,7 +168,7 @@ fun MetricCard(
                 Spacer(modifier = Modifier.padding(top = 4.dp))
                 Text(
                     text = subtitulo,
-                    fontSize = 12.sp,
+                    fontSize = AppText.Body,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -183,3 +177,44 @@ fun MetricCard(
     }
 }
 
+
+
+/**
+ * Pestañas internas de una pantalla (ej. Taller: Trabajos | Repuestos). Sirven para no amontonar
+ * todo en una sola lista larga.
+ */
+@Composable
+fun SubTabs(
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.padding(4.dp)) {
+            options.forEachIndexed { index, label ->
+                val isSelected = index == selected
+                Surface(
+                    onClick = { onSelect(index) },
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    shadowElevation = if (isSelected) 1.dp else 0.dp,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier.padding(vertical = 10.dp)
+                    )
+                }
+            }
+        }
+    }
+}

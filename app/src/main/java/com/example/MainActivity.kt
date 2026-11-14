@@ -1,5 +1,19 @@
 package com.example
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.RestartAlt
+import com.example.ui.screens.SyncSetupScreen
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.vector.ImageVector
 import android.os.Bundle
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
@@ -76,26 +90,73 @@ import com.example.ui.screens.FinancesScreen
 import com.example.ui.screens.FleetDialogHost
 import com.example.ui.screens.FleetScreen
 import com.example.ui.screens.InteractiveTourWalkthrough
+import com.example.ui.screens.tourTarget
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.WorkshopScreen
 import androidx.compose.material.icons.outlined.HelpOutline
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.MyApplicationTheme
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.theme.NavyDark
 import com.example.ui.theme.NavyPrimary
 import com.example.ui.theme.SurfaceBorder
+import com.example.util.BackupScheduler
 
 class MainActivity : FragmentActivity() {
     private val viewModel: FleetViewModel by viewModels()
+
+    // Si el teléfono queda fuera de la app más de 5 minutos, se cierra la sesión y pide el PIN.
+    private var backgroundSince = 0L
+
+    override fun onStop() {
+        super.onStop()
+        backgroundSince = android.os.SystemClock.elapsedRealtime()
+        // Al salir de la app se guarda la copia en Drive de inmediato
+        viewModel.onAppBackground()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (backgroundSince > 0L && android.os.SystemClock.elapsedRealtime() - backgroundSince > AUTO_LOCK_MS) {
+            viewModel.logout()
+        }
+        backgroundSince = 0L
+    }
+
+    private companion object {
+        const val AUTO_LOCK_MS = 5 * 60 * 1000L
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val syncReady by viewModel.syncReady.collectAsStateWithLifecycle()
             MyApplicationTheme(darkTheme = state.isDarkMode) {
+                val context = LocalContext.current
                 val snackbarHostState = remember { SnackbarHostState() }
+
+                val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) { /* Si no la concede, simplemente no recibirá avisos; la app sigue funcionando. */ }
+
+                // Se activa solo una vez por sesión, al ingresar: pide el permiso de notificaciones
+                // (Android 13+) y programa los avisos diarios de las 8:00 y 19:30 junto con el
+                // respaldo automático de la tarde. enqueueUniquePeriodicWork evita duplicarlos.
+                LaunchedEffect(state.isLoggedIn) {
+                    if (state.isLoggedIn) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        BackupScheduler.schedule(context)
+                    }
+                }
 
                 LaunchedEffect(state.messageSnackbar) {
                     state.messageSnackbar?.let { msg ->
@@ -106,11 +167,17 @@ class MainActivity : FragmentActivity() {
 
                 if (!state.isLoggedIn) {
                     LoginScreen(
-                        onLoginWithGoogle = { email, name ->
-                            viewModel.loginWithGoogle(email, name)
-                        },
-                        onLoginSuccess = { viewModel.setLoggedIn(true) }
+                        users = remember { viewModel.loginUsers() },
+                        lastUserId = remember { viewModel.lastLoginUserId() },
+                        onCreateFirstAdmin = { name, email, pin -> viewModel.createFirstAdmin(name, email, pin) },
+                        onVerifyPin = { id, pin -> viewModel.verifyUserPin(id, pin) },
+                        lockRemainingMs = { id -> viewModel.pinLockRemainingMs(id) },
+                        onDeviceUnlock = { id -> viewModel.unlockWithDeviceCredential(id) },
+                        onResetPinWithDevice = { id, pin -> viewModel.resetPinWithDeviceCredential(id, pin) }
                     )
+                } else if (state.isAdmin && !syncReady) {
+                    // Paso obligatorio: correo + carpeta de copias antes de empezar
+                    SyncSetupScreen(state = state, viewModel = viewModel)
                 } else {
                     MainAppScaffold(
                         state = state,
@@ -123,6 +190,13 @@ class MainActivity : FragmentActivity() {
     }
 }
 
+private data class NavTab(
+    val index: Int,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val icon: ImageVector
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppScaffold(
@@ -130,79 +204,63 @@ fun MainAppScaffold(
     viewModel: FleetViewModel,
     snackbarHostState: SnackbarHostState
 ) {
-    val navTitles = listOf(
-        "Centro de Operaciones",
-        "Control de Pagos y Deudas",
-        "Control de Flota y Contratos",
-        "Caja y Finanzas",
-        "Taller e Inventario"
-    )
+    // Títulos cortos: el nombre largo de cada sección no cabía en la barra superior.
+    val tabs = buildList {
+        add(NavTab(0, "Inicio", Icons.Default.SpaceDashboard, Icons.Outlined.SpaceDashboard))
+        add(NavTab(1, "Pagos", Icons.Default.PriceCheck, Icons.Outlined.PriceCheck))
+        add(NavTab(2, "Flota", Icons.Default.ElectricRickshaw, Icons.Outlined.ElectricRickshaw))
+        if (state.isAdmin) add(NavTab(3, "Caja", Icons.Default.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet))
+        add(NavTab(4, "Taller", Icons.Default.BuildCircle, Icons.Outlined.BuildCircle))
+    }
+    // Si un cobrador quedara en la pestaña Caja, se muestra Inicio.
+    val visibleTab = if (!state.isAdmin && state.activeTab == 3) 0 else state.activeTab
+    var menuOpen by remember { mutableStateOf(false) }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(NavyPrimary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ElectricRickshaw,
-                                contentDescription = null,
-                                tint = CyanAccent,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = navTitles.getOrElse(state.activeTab) { "MotoFlota Pro" },
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 16.sp
-                            )
-                        )
-                    }
+                    Text(
+                        text = tabs.firstOrNull { it.index == visibleTab }?.label ?: "MotoFlota",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 },
                 actions = {
                     val urgentCount = state.urgentAlerts.size
                     IconButton(
                         onClick = { viewModel.openDialog(DialogType.EMERGENT_ALERTS) },
-                        modifier = Modifier.testTag("urgent_alerts_bell_button")
+                        modifier = Modifier.tourTarget("bell").testTag("urgent_alerts_bell_button")
                     ) {
                         BadgedBox(
                             badge = {
                                 if (urgentCount > 0) {
-                                    Badge(
-                                        containerColor = DangerRed,
-                                        contentColor = Color.White
-                                    ) {
-                                        Text("$urgentCount", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Badge(containerColor = DangerRed, contentColor = Color.White) {
+                                        Text("$urgentCount")
                                     }
                                 }
                             }
                         ) {
                             Icon(
                                 imageVector = if (urgentCount > 0) Icons.Default.NotificationsActive else Icons.Outlined.Notifications,
-                                contentDescription = "Alertas de Vencimiento",
+                                contentDescription = "Alertas",
                                 tint = if (urgentCount > 0) DangerRed else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                    IconButton(
-                        onClick = { viewModel.openDialog(DialogType.BACKUP_CLOUD) },
-                        modifier = Modifier.testTag("backup_cloud_button")
-                    ) {
-                        Box(contentAlignment = Alignment.BottomEnd) {
+
+                    // Un solo botón con la inicial del usuario abre el menú (antes eran 4 íconos sueltos)
+                    Box {
+                        IconButton(
+                            onClick = { menuOpen = true },
+                            modifier = Modifier.tourTarget("menu").testTag("user_menu_button")
+                        ) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
                                     .background(NavyPrimary),
                                 contentAlignment = Alignment.Center
@@ -210,53 +268,82 @@ fun MainAppScaffold(
                                 Text(
                                     text = state.userName.take(1).uppercase(),
                                     color = CyanAccent,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 14.sp
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(SuccessGreen)
-                                    .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                Text(state.userName, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    state.userRoleLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            HorizontalDivider()
+                            if (state.isAdmin) {
+                                DropdownMenuItem(
+                                    text = { Text("Usuarios") },
+                                    leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
+                                    onClick = { menuOpen = false; viewModel.openDialog(DialogType.MANAGE_USERS) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Respaldos y sincronización") },
+                                    leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) },
+                                    onClick = { menuOpen = false; viewModel.openDialog(DialogType.BACKUP_CLOUD) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Mi perfil") },
+                                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                                    onClick = { menuOpen = false; viewModel.openDialog(DialogType.EDIT_PROFILE) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Cambiar mi PIN") },
+                                leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
+                                onClick = { menuOpen = false; viewModel.openDialog(DialogType.CHANGE_PIN) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (state.notificationsEnabled) "Silenciar avisos" else "Activar avisos") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (state.notificationsEnabled) Icons.Outlined.Notifications else Icons.Default.NotificationsActive,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = { menuOpen = false; viewModel.setNotificationsEnabled(!state.notificationsEnabled) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (state.isDarkMode) "Modo claro" else "Modo oscuro") },
+                                leadingIcon = {
+                                    Icon(if (state.isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode, contentDescription = null)
+                                },
+                                onClick = { menuOpen = false; viewModel.toggleDarkMode() }
+                            )
+                            if (state.isAdmin) {
+                                DropdownMenuItem(
+                                    text = { Text("Empezar de cero") },
+                                    leadingIcon = { Icon(Icons.Default.RestartAlt, contentDescription = null) },
+                                    onClick = { menuOpen = false; viewModel.openDialog(DialogType.START_FROM_ZERO) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Guía de uso") },
+                                leadingIcon = { Icon(Icons.Outlined.HelpOutline, contentDescription = null) },
+                                onClick = { menuOpen = false; viewModel.startInteractiveTour() }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Cerrar sesión") },
+                                leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
+                                onClick = { menuOpen = false; viewModel.logout() },
+                                modifier = Modifier.testTag("logout_button")
                             )
                         }
                     }
-                    IconButton(
-                        onClick = { viewModel.startInteractiveTour() },
-                        modifier = Modifier.testTag("tour_guide_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.HelpOutline,
-                            contentDescription = "Guía Interactiva",
-                            tint = CyanAccent
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.toggleDarkMode() },
-                        modifier = Modifier.testTag("theme_toggle_button")
-                    ) {
-                        Icon(
-                            imageVector = if (state.isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = if (state.isDarkMode) "Modo Claro" else "Modo Oscuro",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.setLoggedIn(false) },
-                        modifier = Modifier.testTag("logout_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ExitToApp,
-                            contentDescription = "Cerrar Sesión",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Transparent
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
         bottomBar = {
@@ -265,105 +352,28 @@ fun MainAppScaffold(
                 tonalElevation = 8.dp,
                 modifier = Modifier.testTag("main_bottom_nav")
             ) {
-                // Tab 0: Inicio
-                NavigationBarItem(
-                    selected = state.activeTab == 0,
-                    onClick = { viewModel.onTabSelected(0) },
-                    icon = {
-                        Icon(
-                            imageVector = if (state.activeTab == 0) Icons.Default.SpaceDashboard else Icons.Outlined.SpaceDashboard,
-                            contentDescription = "Inicio"
+                tabs.forEach { tab ->
+                    val selected = visibleTab == tab.index
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { viewModel.onTabSelected(tab.index) },
+                        icon = {
+                            Icon(
+                                imageVector = if (selected) tab.selectedIcon else tab.icon,
+                                contentDescription = tab.label
+                            )
+                        },
+                        label = { Text(tab.label, style = MaterialTheme.typography.labelMedium) },
+                        modifier = Modifier.tourTarget("nav_${tab.index}"),
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    },
-                    label = { Text("Inicio", fontWeight = if (state.activeTab == 0) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                )
-
-                // Tab 1: Pagos y Deudas
-                NavigationBarItem(
-                    selected = state.activeTab == 1,
-                    onClick = { viewModel.onTabSelected(1) },
-                    icon = {
-                        Icon(
-                            imageVector = if (state.activeTab == 1) Icons.Default.PriceCheck else Icons.Outlined.PriceCheck,
-                            contentDescription = "Pagos"
-                        )
-                    },
-                    label = { Text("Pagos", fontWeight = if (state.activeTab == 1) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-
-                // Tab 2: Flota
-                NavigationBarItem(
-                    selected = state.activeTab == 2,
-                    onClick = { viewModel.onTabSelected(2) },
-                    icon = {
-                        Icon(
-                            imageVector = if (state.activeTab == 2) Icons.Default.ElectricRickshaw else Icons.Outlined.ElectricRickshaw,
-                            contentDescription = "Flota"
-                        )
-                    },
-                    label = { Text("Flota", fontWeight = if (state.activeTab == 2) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-
-                // Tab 3: Finanzas
-                NavigationBarItem(
-                    selected = state.activeTab == 3,
-                    onClick = { viewModel.onTabSelected(3) },
-                    icon = {
-                        Icon(
-                            imageVector = if (state.activeTab == 3) Icons.Default.AccountBalanceWallet else Icons.Outlined.AccountBalanceWallet,
-                            contentDescription = "Finanzas"
-                        )
-                    },
-                    label = { Text("Finanzas", fontWeight = if (state.activeTab == 3) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-
-                // Tab 4: Taller
-                NavigationBarItem(
-                    selected = state.activeTab == 4,
-                    onClick = { viewModel.onTabSelected(4) },
-                    icon = {
-                        Icon(
-                            imageVector = if (state.activeTab == 4) Icons.Default.BuildCircle else Icons.Outlined.BuildCircle,
-                            contentDescription = "Taller"
-                        )
-                    },
-                    label = { Text("Taller", fontWeight = if (state.activeTab == 4) FontWeight.Bold else FontWeight.Medium, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -374,7 +384,7 @@ fun MainAppScaffold(
                 .padding(innerPadding)
         ) {
             AnimatedContent(
-                targetState = state.activeTab,
+                targetState = visibleTab,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label = "tab_switch"
             ) { tab ->
@@ -388,13 +398,15 @@ fun MainAppScaffold(
             }
 
             FleetDialogHost(state = state, viewModel = viewModel)
-
-            if (state.isInteractiveTourActive) {
-                InteractiveTourWalkthrough(
-                    state = state,
-                    viewModel = viewModel
-                )
-            }
         }
+    }
+
+    // La guía se dibuja encima de TODA la pantalla (barras incluidas) para señalar cualquier botón.
+    if (state.isInteractiveTourActive) {
+        InteractiveTourWalkthrough(
+            state = state,
+            viewModel = viewModel
+        )
+    }
     }
 }

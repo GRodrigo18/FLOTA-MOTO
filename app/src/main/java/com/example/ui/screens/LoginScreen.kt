@@ -1,10 +1,7 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,735 +11,399 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.ElectricRickshaw
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PersonOutline
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.fragment.app.FragmentActivity
-import com.example.util.BiometricHelper
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import com.example.ui.theme.CyanAccent
-import com.example.ui.theme.NavyDark
 import com.example.ui.theme.NavyPrimary
-import com.example.ui.theme.SuccessGreen
+import com.example.util.AppUser
+import com.example.util.BiometricHelper
+import com.example.util.PinAuth
+import com.example.util.UserStore
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Pantalla de ingreso.
+ * - Primera vez: se crea el dueño como Administrador (nombre + PIN).
+ * - Con un usuario: PIN, o huella / bloqueo del teléfono.
+ * - Con varios usuarios: se elige el nombre y se escribe SU PIN. La huella no se ofrece
+ *   porque cualquiera que conozca el bloqueo del celular podría entrar como otra persona.
+ */
 @Composable
 fun LoginScreen(
-    onLoginWithGoogle: (email: String, name: String) -> Unit,
-    onLoginSuccess: () -> Unit,
+    users: List<AppUser>,
+    lastUserId: String?,
+    onCreateFirstAdmin: (name: String, email: String, pin: String) -> UserStore.AddResult,
+    onVerifyPin: (userId: String, pin: String) -> PinAuth.Result,
+    lockRemainingMs: (userId: String) -> Long,
+    onDeviceUnlock: (userId: String) -> Unit,
+    onResetPinWithDevice: (userId: String, newPin: String) -> Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val biometricStatus = remember { BiometricHelper.checkBiometricStatus(context) }
-    var biometricFeedbackMessage by remember { mutableStateOf<String?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    var showGoogleAccountPicker by remember { mutableStateOf(false) }
-    var isSigningInGoogle by remember { mutableStateOf(false) }
-    var signingInAccountName by remember { mutableStateOf("") }
+    val singleUser = users.size == 1
+    val deviceAuthAvailable = remember {
+        BiometricHelper.checkBiometricStatus(context) == BiometricHelper.BiometricStatus.AVAILABLE
+    }
 
-    var showManualForm by remember { mutableStateOf(false) }
-    var usuario by remember { mutableStateOf("rodrigogrados414@gmail.com") }
-    var password by remember { mutableStateOf("••••••••") }
-    var showPassword by remember { mutableStateOf(false) }
+    val setupMode = users.isEmpty()
+    var selectedId by remember {
+        mutableStateOf(users.firstOrNull { it.id == lastUserId }?.id ?: users.firstOrNull()?.id)
+    }
+    var resettingPin by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var showPin by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var lockLeft by remember { mutableStateOf(0) }
 
-    var isAddingCustomGoogleAccount by remember { mutableStateOf(false) }
-    var customGoogleEmail by remember { mutableStateOf("") }
-    var customGoogleName by remember { mutableStateOf("") }
+    fun secondsLeft(): Int = selectedId?.let { ((lockRemainingMs(it) + 999) / 1000).toInt() } ?: 0
 
-    val googleAccounts = listOf(
-        "Rodrigo Grados" to "rodrigogrados414@gmail.com",
-        "Administración Flota" to "admin@motoflota.pe",
-        "Operaciones Taller" to "operaciones@motoflota.pe"
-    )
-
-    var showPermissionAuthDialog by remember { mutableStateOf(false) }
-    var pendingAccountForAuth by remember { mutableStateOf<Pair<String, String>?>(null) }
-
-    fun requestBiometricPermissionAndLogin(name: String, email: String) {
-        val fragmentActivity = context as? FragmentActivity
-        if (fragmentActivity != null && biometricStatus == BiometricHelper.BiometricStatus.AVAILABLE) {
-            BiometricHelper.authenticate(
-                activity = fragmentActivity,
-                title = "Permiso de Acceso • MotoFlota Pro",
-                subtitle = "Coloque su huella dactilar para autorizar el ingreso con $email",
-                onSuccess = {
-                    biometricFeedbackMessage = null
-                    showGoogleAccountPicker = false
-                    isSigningInGoogle = false
-                    onLoginWithGoogle(email, name)
-                },
-                onError = { error ->
-                    biometricFeedbackMessage = "Acceso biométrico no concedido: $error"
-                    isSigningInGoogle = false
-                }
-            )
-        } else {
-            pendingAccountForAuth = name to email
-            showPermissionAuthDialog = true
+    LaunchedEffect(selectedId) {
+        lockLeft = secondsLeft()
+        pin = ""
+        error = null
+    }
+    LaunchedEffect(lockLeft) {
+        if (lockLeft > 0) {
+            delay(1000)
+            lockLeft = secondsLeft()
         }
     }
+
+    fun launchDeviceAuth(onOk: () -> Unit) {
+        val activity = context as? FragmentActivity
+        if (activity == null) {
+            error = "No se pudo abrir la verificación del teléfono."
+            return
+        }
+        BiometricHelper.authenticate(
+            activity = activity,
+            title = "Verifica que eres tú",
+            subtitle = "Usa tu huella, rostro o el bloqueo de pantalla del teléfono",
+            onSuccess = onOk,
+            onError = { msg -> error = msg }
+        )
+    }
+
+    fun submit() {
+        error = null
+        val creatingPin = setupMode || resettingPin
+        if (creatingPin) {
+            if (!PinAuth.isValidPin(pin)) {
+                error = "El PIN debe tener entre ${PinAuth.MIN_LENGTH} y ${PinAuth.MAX_LENGTH} números."
+                return
+            }
+            if (pin != confirmPin) {
+                error = "Los dos PIN no coinciden."
+                return
+            }
+            if (resettingPin) {
+                val id = selectedId ?: return
+                if (!onResetPinWithDevice(id, pin)) error = "No se pudo cambiar el PIN."
+                return
+            }
+            val mail = email.trim()
+            if (mail.isNotEmpty() && !(mail.contains("@") && mail.contains("."))) {
+                error = "El correo no es válido."
+                return
+            }
+            error = when (onCreateFirstAdmin(name.trim(), mail, pin)) {
+                UserStore.AddResult.OK -> null
+                UserStore.AddResult.INVALID_NAME -> "Escribe tu nombre."
+                UserStore.AddResult.NAME_TAKEN -> "Ese nombre ya existe."
+                UserStore.AddResult.INVALID_PIN -> "El PIN no es válido."
+            }
+            return
+        }
+
+        val id = selectedId ?: return
+        if (lockLeft > 0) return
+        when (onVerifyPin(id, pin)) {
+            PinAuth.Result.OK -> Unit
+            PinAuth.Result.WRONG -> {
+                error = "PIN incorrecto."
+                pin = ""
+            }
+            PinAuth.Result.LOCKED -> {
+                lockLeft = secondsLeft()
+                pin = ""
+            }
+        }
+    }
+
+    val creatingPin = setupMode || resettingPin
+    val inputLocked = !creatingPin && lockLeft > 0
+    val pinVisual: VisualTransformation =
+        if (showPin) VisualTransformation.None else PasswordVisualTransformation()
+    val selectedUser = users.firstOrNull { it.id == selectedId }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentAlignment = Alignment.Center
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding()
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Logo MotoFlota Pro
             Box(
                 modifier = Modifier
-                    .size(92.dp)
+                    .size(68.dp)
                     .clip(CircleShape)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(NavyDark, NavyPrimary)
-                        )
-                    )
-                    .border(2.dp, CyanAccent.copy(alpha = 0.5f), CircleShape),
+                    .background(NavyPrimary),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.ElectricRickshaw,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(52.dp)
-                )
+                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = "MotoFlota Pro",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    letterSpacing = (-0.5).sp
-                )
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground
             )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Gestión de Flota & Cobranzas Diarias",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
+                text = when {
+                    setupMode -> "Crea el usuario administrador"
+                    resettingPin -> "Crea un PIN nuevo para ${selectedUser?.name ?: ""}"
+                    singleUser -> "Hola, ${selectedUser?.name ?: ""}. Ingresa tu PIN"
+                    else -> "¿Quién va a ingresar?"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Tarjeta Principal de Inicio de Sesión Moderno con Google
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Iniciar Sesión",
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Text(
-                        text = "Acceda con su cuenta para sincronizar automáticamente el respaldo de su flota en la nube.",
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // BOTÓN OFICIAL GOOGLE SIGN-IN INTERACTIVO
-                    Surface(
-                        onClick = { showGoogleAccountPicker = true },
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                            .testTag("google_signin_button")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            // Insignia 'G' de Google
-                            GoogleBadgeIcon(modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Continuar con Google",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            )
-                        }
-                    }
-
-                    // Botón de autenticación biométrica (Huella / Face ID)
-                    Button(
-                        onClick = {
-                            val fragmentActivity = context as? FragmentActivity
-                            if (fragmentActivity != null && biometricStatus == BiometricHelper.BiometricStatus.AVAILABLE) {
-                                BiometricHelper.authenticate(
-                                    activity = fragmentActivity,
-                                    title = "Acceso Biométrico MotoFlota Pro",
-                                    subtitle = "Coloque su huella digital o use Face ID para validar su acceso",
-                                    onSuccess = {
-                                        biometricFeedbackMessage = null
-                                        onLoginWithGoogle("rodrigogrados414@gmail.com", "Rodrigo Grados")
-                                    },
-                                    onError = { error ->
-                                        biometricFeedbackMessage = error
-                                    }
-                                )
-                            } else {
-                                // Si no cuenta con huella matriculada o hardware en este momento, informar y permitir el acceso seguro
-                                biometricFeedbackMessage = BiometricHelper.getBiometricStatusMessage(biometricStatus)
-                                onLoginWithGoogle("rodrigogrados414@gmail.com", "Rodrigo Grados")
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("biometric_login_button"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CyanAccent,
-                            contentColor = Color.Black
-                        )
-                    ) {
-                        Icon(
-                            Icons.Default.Fingerprint,
-                            contentDescription = "Huella dactilar",
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            "INGRESAR CON HUELLA / BIOMETRÍA",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    // Indicador de estado del sensor biométrico
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = "Seguridad",
-                            tint = if (biometricStatus == BiometricHelper.BiometricStatus.AVAILABLE) SuccessGreen else CyanAccent,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = biometricFeedbackMessage ?: BiometricHelper.getBiometricStatusMessage(biometricStatus),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Divisor con opción manual
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        HorizontalDivider(modifier = Modifier.weight(1f))
-                        Text(
-                            text = "  o  ",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        HorizontalDivider(modifier = Modifier.weight(1f))
-                    }
-
-                    // Toggle para alternar formulario clásico o demo
-                    OutlinedButton(
-                        onClick = { showManualForm = !showManualForm },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = if (showManualForm) "Ocultar formulario manual" else "Ingreso manual con contraseña",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    AnimatedVisibility(visible = showManualForm) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            OutlinedTextField(
-                                value = usuario,
-                                onValueChange = { usuario = it },
-                                label = { Text("Usuario / Correo") },
-                                prefix = {
-                                    Icon(
-                                        Icons.Default.PersonOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("login_username_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = { Text("Contraseña") },
-                                prefix = {
-                                    Icon(
-                                        Icons.Default.Lock,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                trailingIcon = {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
-                                        Icon(
-                                            imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Mostrar contraseña",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("login_password_input"),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-
-                            Button(
-                                onClick = {
-                                    val name = usuario.substringBefore("@").replace(".", " ").capitalize()
-                                    onLoginWithGoogle(usuario, name)
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
-                            ) {
-                                Text("INGRESAR", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Footer security notice
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Google Cloud Sync • Base local cifrada activa",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        // BOTTOM SHEET INTERACTIVO GOOGLE ONE-TAP SELECTOR
-        if (showGoogleAccountPicker) {
-            ModalBottomSheet(
-                onDismissRequest = {
-                    if (!isSigningInGoogle) {
-                        showGoogleAccountPicker = false
-                    }
-                },
-                sheetState = sheetState,
-                containerColor = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (isSigningInGoogle) {
-                        // Estado animado de verificación
-                        Spacer(modifier = Modifier.height(20.dp))
-                        CircularProgressIndicator(
-                            color = CyanAccent,
-                            modifier = Modifier.size(48.dp),
-                            strokeWidth = 4.dp
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Iniciando sesión con Google...",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Conectando con $signingInAccountName",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(30.dp))
-                    } else {
-                        // Cabecera Google One-Tap
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            GoogleBadgeIcon(modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Acceder con Google",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
-                                )
-                                Text(
-                                    text = "para continuar en MotoFlota Pro",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        // Lista de Cuentas Sugeridas en el Dispositivo
-                        googleAccounts.forEach { (name, email) ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        signingInAccountName = email
-                                        isSigningInGoogle = true
-                                        requestBiometricPermissionAndLogin(name, email)
-                                    },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                ),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .clip(CircleShape)
-                                            .background(NavyPrimary),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = name.take(1).uppercase(),
-                                            color = CyanAccent,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            text = email,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Icon(
-                                        Icons.Default.CloudDone,
-                                        contentDescription = null,
-                                        tint = CyanAccent,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-
-                        // Opción agregar otra cuenta
-                        if (!isAddingCustomGoogleAccount) {
-                            Surface(
-                                onClick = { isAddingCustomGoogleAccount = true },
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color.Transparent,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = "Usar otra cuenta de Google",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = customGoogleName,
-                                    onValueChange = { customGoogleName = it },
-                                    label = { Text("Nombre") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                OutlinedTextField(
-                                    value = customGoogleEmail,
-                                    onValueChange = { customGoogleEmail = it },
-                                    label = { Text("Correo Gmail (@gmail.com)") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                Button(
-                                    onClick = {
-                                        if (customGoogleEmail.isNotBlank()) {
-                                            val name = if (customGoogleName.isNotBlank()) customGoogleName else customGoogleEmail.substringBefore("@")
-                                            signingInAccountName = customGoogleEmail
-                                            isSigningInGoogle = true
-                                            requestBiometricPermissionAndLogin(name, customGoogleEmail.trim())
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Color.Black),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Continuar con esta cuenta", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "Para continuar, Google compartirá tu nombre, dirección de correo electrónico y preferencia de idioma con MotoFlota Pro.",
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Diálogo de confirmación y autorización de permiso en caso de que no haya biométrico de hardware
-        if (showPermissionAuthDialog && pendingAccountForAuth != null) {
-            val (accName, accEmail) = pendingAccountForAuth!!
-            AlertDialog(
-                onDismissRequest = {
-                    showPermissionAuthDialog = false
-                    pendingAccountForAuth = null
-                    isSigningInGoogle = false
-                },
-                icon = {
-                    Icon(
-                        Icons.Default.VerifiedUser,
-                        contentDescription = null,
-                        tint = CyanAccent,
-                        modifier = Modifier.size(36.dp)
-                    )
-                },
-                title = {
-                    Text(
-                        text = "Autorizar Acceso",
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "¿Desea iniciar sesión y sincronizar la flota con la cuenta de Google seleccionada?",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+            // Selección de usuario (solo cuando hay varios)
+            if (!setupMode && !singleUser && !resettingPin) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    users.forEach { u ->
+                        val selected = u.id == selectedId
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
+                            onClick = { selectedId = u.id },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (selected) NavyPrimary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                if (selected) 2.dp else 1.dp,
+                                if (selected) NavyPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("login_user_${u.id}")
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(
-                                    text = accName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = accEmail,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(NavyPrimary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(u.name.take(1).uppercase(), color = CyanAccent, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(u.name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                    Text(u.role.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (selected) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Seleccionado", tint = NavyPrimary)
+                                }
                             }
                         }
                     }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showPermissionAuthDialog = false
-                            showGoogleAccountPicker = false
-                            isSigningInGoogle = false
-                            onLoginWithGoogle(accEmail, accName)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanAccent, contentColor = Color.Black)
-                    ) {
-                        Text("Autorizar e Ingresar", fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    OutlinedButton(
-                        onClick = {
-                            showPermissionAuthDialog = false
-                            pendingAccountForAuth = null
-                            isSigningInGoogle = false
-                        }
-                    ) {
-                        Text("Cancelar")
-                    }
                 }
-            )
-        }
-    }
-}
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
-@Composable
-fun GoogleBadgeIcon(modifier: Modifier = Modifier) {
-    // Ícono oficial vectorizado estilizado con los 4 colores de Google (Azul, Rojo, Amarillo, Verde)
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = Color.White,
-            border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "G",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 15.sp,
-                    color = Color(0xFF4285F4)
+            if (setupMode) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { if (it.length <= 30) name = it },
+                    label = { Text("Tu nombre") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("setup_name_input")
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Correo para respaldos (opcional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth().testTag("setup_email_input")
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { v -> if (v.length <= PinAuth.MAX_LENGTH && v.all { it in '0'..'9' }) pin = v },
+                label = { Text(if (creatingPin) "PIN nuevo (${PinAuth.MIN_LENGTH} a ${PinAuth.MAX_LENGTH} números)" else "PIN") },
+                singleLine = true,
+                enabled = !inputLocked,
+                visualTransformation = pinVisual,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = if (creatingPin) ImeAction.Next else ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                trailingIcon = {
+                    IconButton(onClick = { showPin = !showPin }) {
+                        Icon(
+                            imageVector = if (showPin) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showPin) "Ocultar PIN" else "Mostrar PIN"
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().testTag("login_pin_input")
+            )
+
+            if (creatingPin) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = confirmPin,
+                    onValueChange = { v -> if (v.length <= PinAuth.MAX_LENGTH && v.all { it in '0'..'9' }) confirmPin = v },
+                    label = { Text("Repite el PIN") },
+                    singleLine = true,
+                    visualTransformation = pinVisual,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    modifier = Modifier.fillMaxWidth().testTag("setup_confirm_pin_input")
                 )
             }
+
+            if (inputLocked) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Demasiados intentos. Espera $lockLeft s.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+            error?.let { msg ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+            Button(
+                onClick = { submit() },
+                enabled = !inputLocked && (setupMode || selectedId != null),
+                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("login_submit_button"),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = NavyPrimary)
+            ) {
+                Text(
+                    text = when {
+                        setupMode -> "Crear y entrar"
+                        resettingPin -> "Guardar PIN y entrar"
+                        else -> "Ingresar"
+                    },
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+
+            if (!setupMode && !resettingPin) {
+                Spacer(modifier = Modifier.height(6.dp))
+                if (singleUser && deviceAuthAvailable) {
+                    TextButton(onClick = { launchDeviceAuth { selectedId?.let(onDeviceUnlock) } }) {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ingresar con huella o bloqueo del teléfono")
+                    }
+                }
+                TextButton(
+                    onClick = {
+                        error = when {
+                            !singleUser ->
+                                "Pide a un administrador que te ponga un PIN nuevo desde Menú › Usuarios."
+                            deviceAuthAvailable -> {
+                                launchDeviceAuth {
+                                    resettingPin = true
+                                    pin = ""
+                                    confirmPin = ""
+                                    error = null
+                                }
+                                null
+                            }
+                            else ->
+                                "El teléfono no tiene huella ni bloqueo de pantalla. Para recuperar el acceso " +
+                                    "hay que borrar los datos de la app y restaurar un respaldo."
+                        }
+                    }
+                ) {
+                    Text("¿Olvidaste tu PIN?")
+                }
+            }
+            if (resettingPin) {
+                TextButton(onClick = { resettingPin = false; pin = ""; confirmPin = ""; error = null }) {
+                    Text("Cancelar")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Los datos se guardan en este teléfono y se copian en tu Google Drive.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

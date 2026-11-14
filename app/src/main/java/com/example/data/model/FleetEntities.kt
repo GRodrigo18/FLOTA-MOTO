@@ -9,7 +9,7 @@ data class FleetUnitEntity(
     val nombreMoto: String = "Moto 1", // Identificación principal: Moto 1, Moto 2, etc.
     val placa: String,
     val cliente: String = "Sin asignar", // Chofer asignado (cambiante)
-    val telefono: String = "+51 987 654 321",
+    val telefono: String = "",
     val estado: String = "Vigente", // "Vigente", "Por Vencer", "En Taller", "Inactivo"
     val cuotaDiaria: Double = 35.0, // Fijo S/ 35.00
     val deudaGarantia: Double = 0.0, // Garantía total es 200; si dejó 100, debe 100
@@ -66,6 +66,7 @@ data class DetailedMaintenanceEntity(
     val costoFrenos: Double = 0.0,
     val costoLlantas: Double = 0.0,
     val costoPlanchado: Double = 0.0,
+    val costoCablesCambio: Double = 0.0, // Cables de cambios (desde la versión 7 de la base de datos)
     val costoCana: Double = 0.0, // Caña / Horquilla delantera donde va la llanta delantera
     val costoBajadaMotorCompleto: Double = 0.0,
     val costoBajadaMedioMotor: Double = 0.0,

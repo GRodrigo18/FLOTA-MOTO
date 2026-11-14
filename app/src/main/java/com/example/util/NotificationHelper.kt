@@ -40,7 +40,7 @@ object NotificationHelper {
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 350, 150, 350)
                 setSound(soundUri, audioAttributes)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
                 setShowBadge(true)
             }
 
@@ -92,12 +92,19 @@ object NotificationHelper {
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // Con el teléfono bloqueado no se muestran nombres ni montos, solo el aviso genérico.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle("MotoFlota Pro")
+                    .setContentText("Tienes avisos nuevos. Desbloquea para verlos.")
+                    .build()
+            )
             .setSound(soundUri)
             .setVibrate(longArrayOf(0, 350, 150, 350))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .setFullScreenIntent(pendingIntent, true) // Heads-up emergente de máxima prioridad
 
         try {
             val manager = NotificationManagerCompat.from(context)

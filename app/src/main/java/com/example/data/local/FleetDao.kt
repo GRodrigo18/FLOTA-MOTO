@@ -57,6 +57,9 @@ interface FleetDao {
     @Query("UPDATE fleet_units SET revisionTecnicaMesRealizada = :realizada WHERE placa = :placa")
     suspend fun updateRevisionTecnicaMes(placa: String, realizada: Boolean)
 
+    @Query("UPDATE fleet_units SET revisionTecnicaMesRealizada = 0")
+    suspend fun resetRevisionTecnicaMesTodas()
+
     @Query("UPDATE fleet_units SET cuotaDiaria = :cuota WHERE id = :id")
     suspend fun updateUnitCuota(id: Long, cuota: Double)
 
@@ -217,4 +220,85 @@ interface FleetDao {
 
     @Query("DELETE FROM inventory_batches")
     suspend fun deleteAllBatches()
+
+    // --- CAMBIAR NOMBRE / PLACA DE UNA MOTO (se arrastra a todo su historial) ---
+    @Query("UPDATE fleet_units SET nombreMoto = :nombre, placa = :nuevaPlaca WHERE placa = :placa")
+    suspend fun renameUnitRow(placa: String, nombre: String, nuevaPlaca: String)
+
+    @Query("UPDATE daily_payments SET nombreMoto = :nombre, unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInPayments(placa: String, nombre: String, nuevaPlaca: String)
+
+    @Query("UPDATE debt_records SET nombreMoto = :nombre, unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInDebts(placa: String, nombre: String, nuevaPlaca: String)
+
+    @Query("UPDATE detailed_maintenances SET nombreMoto = :nombre, unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInMaintenances(placa: String, nombre: String, nuevaPlaca: String)
+
+    @Query("UPDATE unit_expenses SET unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInExpenses(placa: String, nuevaPlaca: String)
+
+    @Query("UPDATE finance_movements SET unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInMovements(placa: String, nuevaPlaca: String)
+
+    @Query("UPDATE maintenance_tasks SET unitPlaca = :nuevaPlaca WHERE unitPlaca = :placa")
+    suspend fun renameInTasks(placa: String, nuevaPlaca: String)
+
+    // --- ELIMINAR UNA MOTO REGISTRADA POR ERROR (con todos sus registros) ---
+    @Query("SELECT COUNT(*) FROM daily_payments WHERE unitPlaca = :placa")
+    suspend fun countPayments(placa: String): Int
+
+    @Query("SELECT COUNT(*) FROM detailed_maintenances WHERE unitPlaca = :placa")
+    suspend fun countMaintenances(placa: String): Int
+
+    @Query("SELECT COUNT(*) FROM finance_movements WHERE unitPlaca = :placa")
+    suspend fun countMovements(placa: String): Int
+
+    @Query("DELETE FROM fleet_units WHERE placa = :placa")
+    suspend fun deleteUnitByPlaca(placa: String)
+
+    @Query("DELETE FROM daily_payments WHERE unitPlaca = :placa")
+    suspend fun deletePaymentsOf(placa: String)
+
+    @Query("DELETE FROM debt_records WHERE unitPlaca = :placa")
+    suspend fun deleteDebtsOf(placa: String)
+
+    @Query("DELETE FROM detailed_maintenances WHERE unitPlaca = :placa")
+    suspend fun deleteMaintenancesOf(placa: String)
+
+    @Query("DELETE FROM unit_expenses WHERE unitPlaca = :placa")
+    suspend fun deleteExpensesOf(placa: String)
+
+    @Query("DELETE FROM finance_movements WHERE unitPlaca = :placa")
+    suspend fun deleteMovementsOf(placa: String)
+
+    @Query("DELETE FROM maintenance_tasks WHERE unitPlaca = :placa")
+    suspend fun deleteTasksOf(placa: String)
+
+    // --- CORREGIR / ANULAR UN REGISTRO HECHO POR ERROR (v1.4) ---
+    @Query("DELETE FROM detailed_maintenances WHERE id = :id")
+    suspend fun deleteDetailedMaintenanceById(id: Long)
+
+    @Query("DELETE FROM finance_movements WHERE id = :id")
+    suspend fun deleteMovementById(id: Long)
+
+    @Query("DELETE FROM debt_records WHERE id = :id")
+    suspend fun deleteDebtRecordById(id: Long)
+
+    /**
+     * Borra el movimiento de Caja que se creó junto con otro registro (mismo monto, moto y categoría),
+     * eligiendo el más cercano en el tiempo. Devuelve cuántas filas borró (0 o 1).
+     */
+    @Query(
+        "DELETE FROM finance_movements WHERE id = (SELECT id FROM finance_movements " +
+            "WHERE unitPlaca = :placa AND categoria = :categoria AND ABS(monto - :monto) < 0.005 " +
+            "ORDER BY ABS(timestamp - :timestamp) LIMIT 1)"
+    )
+    suspend fun deleteLinkedMovement(placa: String, categoria: String, monto: Double, timestamp: Long): Int
+
+    /** Lote más reciente de una categoría (para devolver insumos al anular un trabajo). */
+    @Query("SELECT * FROM inventory_batches WHERE categoria = :categoria ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestBatch(categoria: String): InventoryBatchEntity?
+
+    @Query("SELECT * FROM daily_payments WHERE unitPlaca = :placa AND fecha LIKE :mesPrefix || '%'")
+    suspend fun getPaymentsOfMonth(placa: String, mesPrefix: String): List<DailyPaymentEntity>
 }

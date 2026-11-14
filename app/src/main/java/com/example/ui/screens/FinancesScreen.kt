@@ -23,6 +23,7 @@ import java.util.Calendar
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
@@ -68,9 +69,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.PlateBadge
+import com.example.ui.components.SubTabs
 import com.example.ui.DialogType
 import com.example.ui.FleetUiState
 import com.example.ui.FleetViewModel
+import com.example.ui.theme.AppText
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.DangerRedBg
@@ -98,6 +101,63 @@ fun FinancesScreen(
     var selectedYear by remember { mutableIntStateOf(todayCal.get(Calendar.YEAR)) }
     var selectedMonth by remember { mutableIntStateOf(todayCal.get(Calendar.MONTH) + 1) }
     var selectedDay by remember { mutableStateOf<Int?>(todayCal.get(Calendar.DAY_OF_MONTH)) } // null means "Todo el Mes"
+    var cajaTab by remember { mutableIntStateOf(0) }
+    var movDetail by remember { mutableStateOf<com.example.data.model.FinanceMovementEntity?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Detalle de un movimiento: texto completo y, para el administrador, anularlo si fue un error
+    movDetail?.let { mov ->
+        val hint = viewModel.movementFixHint(mov)
+        val bloqueado = mov.categoria == "Mantenimiento Moto" || mov.categoria == "Abono Garantía"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { movDetail = null; confirmDelete = false },
+            title = { Text(if (mov.esIngreso) "Ingreso" else "Egreso") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        (if (mov.esIngreso) "+ S/ " else "- S/ ") + "%.2f".format(mov.monto),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = AppText.Heading,
+                        color = if (mov.esIngreso) SuccessGreenText else DangerRedText
+                    )
+                    Text(mov.concepto, fontSize = AppText.Body)
+                    Text(
+                        listOfNotNull(mov.fecha, mov.categoria, mov.unitPlaca?.takeIf { it.isNotBlank() }).joinToString(" · "),
+                        fontSize = AppText.Small,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (hint != null) Text(hint, fontSize = AppText.Small, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (confirmDelete) {
+                        Text(
+                            "¿Seguro? Se borra este movimiento" +
+                                (if (mov.categoria.startsWith("Pago")) " y la cuota queda como NO pagada." else "."),
+                            fontSize = AppText.Body,
+                            fontWeight = FontWeight.SemiBold,
+                            color = DangerRedText
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (state.isAdmin && !bloqueado) {
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            if (confirmDelete) {
+                                viewModel.deleteMovement(mov)
+                                movDetail = null
+                                confirmDelete = false
+                            } else confirmDelete = true
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = DangerRed)
+                    ) { Text(if (confirmDelete) "Sí, anular" else "Anular") }
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(onClick = { movDetail = null; confirmDelete = false }) { Text("Cerrar") }
+            }
+        )
+    }
 
     val fullMonthNames = listOf(
         "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -149,206 +209,161 @@ fun FinancesScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Calendario tipo Laptop / Dispositivo (Navegación dinámica sin límite de años)
+        // Pestañas internas: Resumen (saldo y gastos) | Historial (calendario y movimientos).
+        // Los costos de taller ya no se repiten aquí: viven solo en la pestaña Taller.
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, SurfaceBorder)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    // Encabezado del calendario con flechas para mes y año
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    if (selectedMonth == 1) {
-                                        selectedMonth = 12
-                                        selectedYear--
-                                    } else {
-                                        selectedMonth--
-                                    }
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Mes anterior",
-                                    tint = CyanAccent,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+            SubTabs(
+                options = listOf("Resumen", "Historial"),
+                selected = cajaTab,
+                onSelect = { cajaTab = it },
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
 
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (selectedDay != null) "Día $selectedDay seleccionado" else "Mostrando todo el mes",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (selectedDay != null) CyanAccent else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+        if (cajaTab == 0) {
+            // Balance Header Card con los montos sincronizados con Inicio y el flujo del período
+            item {
+                val periodName = if (selectedDay != null) {
+                    "Día $selectedDay de ${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear"
+                } else {
+                    "${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear (Mes Completo)"
+                }
 
-                            IconButton(
-                                onClick = {
-                                    if (selectedMonth == 12) {
-                                        selectedMonth = 1
-                                        selectedYear++
-                                    } else {
-                                        selectedMonth++
-                                    }
-                                },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = "Mes siguiente",
-                                    tint = CyanAccent,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
+                FinancesHeaderCard(
+                    totalCaja = state.totalBalance,
+                    totalIngresosGeneral = state.totalIngresos,
+                    totalEgresosGeneral = state.totalEgresos,
+                    periodBalance = periodBalance,
+                    periodIngresos = periodIngresos,
+                    periodEgresos = periodEgresos,
+                    periodLabel = periodName,
+                    isFilteredByDay = selectedDay != null,
+                    onAddIncome = { viewModel.openDialog(DialogType.RECORD_PAYMENT) },
+                    onAddExpense = { viewModel.openDialog(DialogType.ADD_MOVEMENT) }
+                )
+            }
 
-                        // Acciones rápidas de Año y Hoy
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Surface(
-                                onClick = { selectedYear-- },
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = "-1 Año",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                                )
-                            }
-                            Surface(
-                                onClick = { selectedYear++ },
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = "+1 Año",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                                )
-                            }
-                            Surface(
-                                onClick = {
-                                    val now = Calendar.getInstance()
-                                    selectedYear = now.get(Calendar.YEAR)
-                                    selectedMonth = now.get(Calendar.MONTH) + 1
-                                    selectedDay = now.get(Calendar.DAY_OF_MONTH)
-                                },
-                                shape = RoundedCornerShape(6.dp),
-                                color = CyanAccent.copy(alpha = 0.15f),
-                                border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.4f))
-                            ) {
-                                Text(
-                                    text = "Hoy",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CyanAccent,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
+            // Reporte del mes para Excel / correo
+            item {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { viewModel.exportMonthlyReport(context, "%04d-%02d".format(selectedYear, selectedMonth)) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp).tourTarget("caja_report"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Enviar reporte de ${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} (Excel)", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+            }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Botón para seleccionar todo el mes completo
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FilterChip(
-                            selected = selectedDay == null,
-                            onClick = { selectedDay = null },
-                            label = { Text("Todo el Mes (${fullMonthNames.getOrElse(selectedMonth - 1) { "" }})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = CyanAccent,
-                                selectedLabelColor = Color.Black
+            // Expense Breakdown by Category (Donut Chart)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Distribución de Egresos del Mes",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         )
-                        if (selectedDay != null) {
-                            Text(
-                                text = "Toca el día activo para ver todo el mes",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                        Spacer(modifier = Modifier.height(18.dp))
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        val categoryColors = listOf(
+                            DangerRed,
+                            WarningAmber,
+                            NavyLight,
+                            ElectricBlue,
+                            Color(0xFF8B5CF6)
+                        )
 
-                    // Días de la semana estilo Calendario de Laptop (L, M, M, J, V, S, D)
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        listOf("L", "M", "M", "J", "V", "S", "D").forEach { d ->
-                            Text(
-                                text = d,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                        val categories: List<Pair<String, Double>> = state.gastosPorCategoria.toList()
+                        val totalGastos = state.totalEgresos
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Matriz de días del mes
-                    val totalCells = firstDayOfWeek + daysInMonth
-                    val rows = (totalCells + 6) / 7
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        for (row in 0 until rows) {
+                        if (totalGastos <= 0.0 || categories.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "No hay egresos registrados en este período.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = AppText.Body,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                for (col in 0..6) {
-                                    val cellIndex = row * 7 + col
-                                    val dayNum = cellIndex - firstDayOfWeek + 1
-                                    if (dayNum in 1..daysInMonth) {
-                                        val isSelected = selectedDay == dayNum
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1.15f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(
-                                                    if (isSelected) CyanAccent else Color.Transparent
-                                                )
-                                                .clickable {
-                                                    selectedDay = if (selectedDay == dayNum) null else dayNum
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "$dayNum",
-                                                fontSize = 11.sp,
-                                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
-                                                color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                                // Donut Canvas
+                                Box(
+                                    modifier = Modifier
+                                        .size(130.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Canvas(modifier = Modifier.size(120.dp)) {
+                                        val strokeWidth = 22.dp.toPx()
+                                        val diameter = size.minDimension - strokeWidth
+                                        val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
+                                        val arcSize = Size(diameter, diameter)
+
+                                        var startAngle = -90f
+                                        for ((index, pair) in categories.withIndex()) {
+                                            val sweep = ((pair.second / totalGastos) * 360f).toFloat()
+                                            val color = categoryColors[index % categoryColors.size]
+                                            drawArc(
+                                                color = color,
+                                                startAngle = startAngle,
+                                                sweepAngle = sweep - 1.5f,
+                                                useCenter = false,
+                                                topLeft = topLeft,
+                                                size = arcSize,
+                                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                             )
+                                            startAngle += sweep
                                         }
-                                    } else {
-                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "Total",
+                                            fontSize = AppText.Small,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "S/ ${"%.0f".format(totalGastos)}",
+                                            fontSize = AppText.Title,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(18.dp))
+
+                                // Legends
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    for ((index, pair) in categories.withIndex()) {
+                                        val color = categoryColors[index % categoryColors.size]
+                                        val percentage = if (totalGastos > 0) ((pair.second / totalGastos) * 100).toInt() else 0
+                                        CategoryLegendItem(
+                                            titulo = pair.first,
+                                            monto = pair.second,
+                                            porcentaje = percentage,
+                                            color = color
+                                        )
                                     }
                                 }
                             }
@@ -356,394 +371,317 @@ fun FinancesScreen(
                     }
                 }
             }
-        }
-
-        // Balance Header Card con los montos sincronizados con Inicio y el flujo del período
-        item {
-            val periodName = if (selectedDay != null) {
-                "Día $selectedDay de ${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear"
-            } else {
-                "${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear (Mes Completo)"
-            }
-
-            FinancesHeaderCard(
-                totalCaja = state.totalBalance,
-                totalIngresosGeneral = state.totalIngresos,
-                totalEgresosGeneral = state.totalEgresos,
-                periodBalance = periodBalance,
-                periodIngresos = periodIngresos,
-                periodEgresos = periodEgresos,
-                periodLabel = periodName,
-                isFilteredByDay = selectedDay != null,
-                onAddIncome = { viewModel.openDialog(DialogType.RECORD_PAYMENT) },
-                onAddExpense = { viewModel.openDialog(DialogType.ADD_MOVEMENT) }
-            )
-        }
-
-        // Resumen Financiero: Ingresos, Gastos y Costos de Mantenimiento / Taller
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, SurfaceBorder)
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text(
-                        text = "Resumen Financiero y Costos de Taller",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Costo de Mantenimiento Taller
-                        Surface(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        } else {
+            // Calendario tipo Laptop / Dispositivo (Navegación dinámica sin límite de años)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        // Encabezado del calendario con flechas para mes y año
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "COSTO TALLER (${state.selectedMonth})",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                IconButton(
+                                    onClick = {
+                                        if (selectedMonth == 1) {
+                                            selectedMonth = 12
+                                            selectedYear--
+                                        } else {
+                                            selectedMonth--
+                                        }
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Mes anterior",
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "${fullMonthNames.getOrElse(selectedMonth - 1) { "" }} $selectedYear",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = AppText.Title,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = if (selectedDay != null) "Día $selectedDay seleccionado" else "Mostrando todo el mes",
+                                        fontSize = AppText.Small,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (selectedDay != null) CyanAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        if (selectedMonth == 12) {
+                                            selectedMonth = 1
+                                            selectedYear++
+                                        } else {
+                                            selectedMonth++
+                                        }
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Mes siguiente",
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            // Acciones rápidas de Año y Hoy
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Surface(
+                                    onClick = { selectedYear-- },
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = "-1 Año",
+                                        fontSize = AppText.Small,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Surface(
+                                    onClick = { selectedYear++ },
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        text = "+1 Año",
+                                        fontSize = AppText.Small,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Surface(
+                                    onClick = {
+                                        val now = Calendar.getInstance()
+                                        selectedYear = now.get(Calendar.YEAR)
+                                        selectedMonth = now.get(Calendar.MONTH) + 1
+                                        selectedDay = now.get(Calendar.DAY_OF_MONTH)
+                                    },
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = CyanAccent.copy(alpha = 0.15f),
+                                    border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.4f))
+                                ) {
+                                    Text(
+                                        text = "Hoy",
+                                        fontSize = AppText.Small,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyanAccent,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Botón para seleccionar todo el mes completo
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = selectedDay == null,
+                                onClick = { selectedDay = null },
+                                label = { Text("Todo el Mes (${fullMonthNames.getOrElse(selectedMonth - 1) { "" }})", fontSize = AppText.Small, fontWeight = FontWeight.Bold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = CyanAccent,
+                                    selectedLabelColor = Color.Black
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                            )
+                            if (selectedDay != null) {
                                 Text(
-                                    text = "S/ ${"%.2f".format(state.totalMantenimientoMes)}",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "${state.detailedMaintenances.size} servicios reg.",
-                                    fontSize = 11.sp,
+                                    text = "Toca el día activo para ver todo el mes",
+                                    fontSize = AppText.Small,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
 
-                        // Deuda por Cobrar Flota
-                        Surface(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            color = WarningAmberBg,
-                            border = BorderStroke(1.dp, WarningAmberText.copy(alpha = 0.3f))
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Días de la semana estilo Calendario de Laptop (L, M, M, J, V, S, D)
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            listOf("L", "M", "M", "J", "V", "S", "D").forEach { d ->
                                 Text(
-                                    text = "DEUDA TOTAL CHOFERES",
-                                    fontSize = 10.sp,
+                                    text = d,
+                                    fontSize = AppText.Small,
                                     fontWeight = FontWeight.Bold,
-                                    color = WarningAmberText
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "S/ ${"%.2f".format(state.totalDeudaPendiente)}",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = WarningAmberText
-                                )
-                                Text(
-                                    text = "Por cobrar",
-                                    fontSize = 11.sp,
-                                    color = WarningAmberText.copy(alpha = 0.8f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
-                    }
 
-                    // Desglose consolidado de Gastos de Taller por Moto en el mes
-                    val monthMaintenances = state.detailedMaintenances.filter { it.mesAno == state.selectedMonth }
-                    if (monthMaintenances.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "Inversión Consolidada en Taller por Moto (${state.selectedMonth}):",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                        val groupedByMoto = monthMaintenances.groupBy { it.unitPlaca }
-                        groupedByMoto.forEach { (placa, records) ->
-                            val motoName = records.firstOrNull()?.nombreMoto ?: "Moto"
-                            val totalMoto = records.sumOf { it.costoTotal }
-                            val totalServicios = records.size
-
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = motoName,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            PlateBadge(placa = placa)
+                        // Matriz de días del mes
+                        val totalCells = firstDayOfWeek + daysInMonth
+                        val rows = (totalCells + 6) / 7
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            for (row in 0 until rows) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    for (col in 0..6) {
+                                        val cellIndex = row * 7 + col
+                                        val dayNum = cellIndex - firstDayOfWeek + 1
+                                        if (dayNum in 1..daysInMonth) {
+                                            val isSelected = selectedDay == dayNum
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .aspectRatio(1.15f)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(
+                                                        if (isSelected) CyanAccent else Color.Transparent
+                                                    )
+                                                    .clickable {
+                                                        selectedDay = if (selectedDay == dayNum) null else dayNum
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "$dayNum",
+                                                    fontSize = AppText.Small,
+                                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+                                                    color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        } else {
+                                            Spacer(modifier = Modifier.weight(1f))
                                         }
-                                        Text(
-                                            text = "S/ ${"%.2f".format(totalMoto)}",
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 14.sp,
-                                            color = DangerRed
-                                        )
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "$totalServicios servicio(s): " + records.joinToString(", ") { it.motivoDetallado.ifBlank { it.tipoTrabajo } },
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2
-                                    )
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Expense Breakdown by Category (Donut Chart)
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, SurfaceBorder)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+            // Lista de Transacciones Detalladas del Período
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "Distribución de Egresos del Mes",
+                        text = "Movimientos",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     )
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    val categoryColors = listOf(
-                        DangerRed,
-                        WarningAmber,
-                        NavyLight,
-                        ElectricBlue,
-                        Color(0xFF8B5CF6)
+                    Text(
+                        text = "${filteredByDate.size} registros",
+                        fontSize = AppText.Body,
+                        color = CyanAccent,
+                        fontWeight = FontWeight.Bold
                     )
+                }
+            }
 
-                    val categories: List<Pair<String, Double>> = state.gastosPorCategoria.toList()
-                    val totalGastos = state.totalEgresos
-
-                    if (totalGastos <= 0.0 || categories.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "No hay egresos registrados en este período.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Donut Canvas
-                            Box(
-                                modifier = Modifier
-                                    .size(130.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Canvas(modifier = Modifier.size(120.dp)) {
-                                    val strokeWidth = 22.dp.toPx()
-                                    val diameter = size.minDimension - strokeWidth
-                                    val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
-                                    val arcSize = Size(diameter, diameter)
-
-                                    var startAngle = -90f
-                                    for ((index, pair) in categories.withIndex()) {
-                                        val sweep = ((pair.second / totalGastos) * 360f).toFloat()
-                                        val color = categoryColors[index % categoryColors.size]
-                                        drawArc(
-                                            color = color,
-                                            startAngle = startAngle,
-                                            sweepAngle = sweep - 1.5f,
-                                            useCenter = false,
-                                            topLeft = topLeft,
-                                            size = arcSize,
-                                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                                        )
-                                        startAngle += sweep
-                                    }
-                                }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "Total",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "S/ ${"%.0f".format(totalGastos)}",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(18.dp))
-
-                            // Legends
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                for ((index, pair) in categories.withIndex()) {
-                                    val color = categoryColors[index % categoryColors.size]
-                                    val percentage = if (totalGastos > 0) ((pair.second / totalGastos) * 100).toInt() else 0
-                                    CategoryLegendItem(
-                                        titulo = pair.first,
-                                        monto = pair.second,
-                                        porcentaje = percentage,
-                                        color = color
-                                    )
-                                }
-                            }
-                        }
+            if (filteredByDate.isEmpty()) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, SurfaceBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "No se encontraron movimientos registrados en este período.",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            modifier = Modifier.padding(16.dp)
+                        )
                     }
                 }
-            }
-        }
-
-        // Lista de Transacciones Detalladas del Período
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Movimientos del Período",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-                Text(
-                    text = "${filteredByDate.size} registros",
-                    fontSize = 12.sp,
-                    color = CyanAccent,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        if (filteredByDate.isEmpty()) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, SurfaceBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "No se encontraron movimientos registrados en este período.",
-                        style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            }
-        } else {
-            items(filteredByDate, key = { it.id }) { mov ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, SurfaceBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            } else {
+                items(filteredByDate, key = { it.id }) { mov ->
+                    Surface(
+                        onClick = { movDetail = mov; confirmDelete = false },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, SurfaceBorder),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(if (mov.esIngreso) SuccessGreenBg else DangerRedBg),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = if (mov.esIngreso) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                                    contentDescription = if (mov.esIngreso) "Ingreso" else "Egreso",
-                                    tint = if (mov.esIngreso) SuccessGreen else DangerRed,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = mov.concepto,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${mov.fecha} • ${mov.categoria}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(if (mov.esIngreso) SuccessGreenBg else DangerRedBg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (mov.esIngreso) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                        contentDescription = if (mov.esIngreso) "Ingreso" else "Egreso",
+                                        tint = if (mov.esIngreso) SuccessGreen else DangerRed,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    val placa = mov.unitPlaca
-                                    if (!placa.isNullOrBlank()) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        PlateBadge(placa = placa)
-                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = mov.concepto,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = AppText.Body,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = listOfNotNull(mov.fecha, mov.categoria, mov.unitPlaca?.takeIf { it.isNotBlank() })
+                                            .joinToString(" · "),
+                                        fontSize = AppText.Small,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
-                        }
 
-                        Text(
-                            text = (if (mov.esIngreso) "+ S/ " else "- S/ ") + "%.2f".format(mov.monto),
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
-                            color = if (mov.esIngreso) SuccessGreenText else DangerRedText
-                        )
+                            Text(
+                                text = (if (mov.esIngreso) "+ S/ " else "- S/ ") + "%.2f".format(mov.monto),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = AppText.Title,
+                                color = if (mov.esIngreso) SuccessGreenText else DangerRedText
+                            )
+                        }
                     }
                 }
             }
@@ -789,7 +727,7 @@ private fun FinancesHeaderCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Icon(
                             imageVector = Icons.Default.AccountBalance,
                             contentDescription = null,
@@ -800,7 +738,7 @@ private fun FinancesHeaderCard(
                         Text(
                             text = "Caja Disponible en Cuenta",
                             color = Color.White,
-                            fontSize = 13.sp,
+                            fontSize = AppText.Body,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -812,7 +750,7 @@ private fun FinancesHeaderCard(
                         Text(
                             text = "Enlace Inicio ✅",
                             color = SuccessGreen,
-                            fontSize = 10.sp,
+                            fontSize = AppText.Small,
                             fontWeight = FontWeight.ExtraBold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
@@ -836,7 +774,7 @@ private fun FinancesHeaderCard(
                 Text(
                     text = "Saldo total disponible (+S/ ${"%.0f".format(totalIngresosGeneral)} ingresados / -S/ ${"%.0f".format(totalEgresosGeneral)} egresos)",
                     color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 11.sp,
+                    fontSize = AppText.Small,
                     fontWeight = FontWeight.Medium
                 )
 
@@ -858,7 +796,7 @@ private fun FinancesHeaderCard(
                             Text(
                                 text = "Flujo: $periodLabel",
                                 color = CyanAccent,
-                                fontSize = 11.sp,
+                                fontSize = AppText.Small,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -868,7 +806,7 @@ private fun FinancesHeaderCard(
                             Text(
                                 text = "Neto: S/ ${"%,.2f".format(periodBalance)}",
                                 color = if (periodBalance >= 0) SuccessGreen else DangerRed,
-                                fontSize = 12.sp,
+                                fontSize = AppText.Body,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
@@ -889,8 +827,8 @@ private fun FinancesHeaderCard(
                                     Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Column {
-                                        Text("Ingresos", color = Color.White.copy(alpha = 0.7f), fontSize = 9.sp)
-                                        Text("+S/ ${"%,.0f".format(periodIngresos)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("Ingresos", color = Color.White.copy(alpha = 0.7f), fontSize = AppText.Small)
+                                        Text("+S/ ${"%,.0f".format(periodIngresos)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = AppText.Body)
                                     }
                                 }
                             }
@@ -906,8 +844,8 @@ private fun FinancesHeaderCard(
                                     Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = DangerRed, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Column {
-                                        Text("Egresos", color = Color.White.copy(alpha = 0.7f), fontSize = 9.sp)
-                                        Text("-S/ ${"%,.0f".format(periodEgresos)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("Egresos", color = Color.White.copy(alpha = 0.7f), fontSize = AppText.Small)
+                                        Text("-S/ ${"%,.0f".format(periodEgresos)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = AppText.Body)
                                     }
                                 }
                             }
@@ -930,7 +868,7 @@ private fun FinancesHeaderCard(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ Cobro", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("+ Cobro", fontSize = AppText.Body, fontWeight = FontWeight.Bold)
                     }
                     Button(
                         onClick = onAddExpense,
@@ -940,7 +878,7 @@ private fun FinancesHeaderCard(
                     ) {
                         Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("- Gasto", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("- Gasto", fontSize = AppText.Body, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -969,21 +907,21 @@ private fun CategoryLegendItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = titulo,
-                fontSize = 12.sp,
+                fontSize = AppText.Body,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
         }
         Text(
             text = "$porcentaje%",
-            fontSize = 11.sp,
+            fontSize = AppText.Small,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(end = 8.dp)
         )
         Text(
             text = "S/ ${"%.0f".format(monto)}",
-            fontSize = 13.sp,
+            fontSize = AppText.Body,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.onSurface
         )

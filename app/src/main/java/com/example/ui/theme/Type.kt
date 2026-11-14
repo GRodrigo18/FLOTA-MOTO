@@ -93,3 +93,15 @@ val Typography = Typography(
     )
 )
 
+
+/**
+ * Escala única de tamaños de letra de la app. Antes había 14 tamaños escritos a mano (9 a 30)
+ * repartidos por las pantallas; ahora todo usa estos 4 (más las cifras grandes de los resúmenes).
+ * Para agrandar o achicar la letra de toda la app basta con cambiar estos valores.
+ */
+object AppText {
+    val Small = 12.sp   // notas, etiquetas, fechas (antes 9, 10 y 11)
+    val Body = 13.sp    // texto normal de tarjetas y botones (antes 12 y 13)
+    val Title = 15.sp   // títulos de tarjeta y montos (antes 14, 15 y 16)
+    val Heading = 18.sp // títulos de ventana y secciones (antes 17, 18 y 19)
+}

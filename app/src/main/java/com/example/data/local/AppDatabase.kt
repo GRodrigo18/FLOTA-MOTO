@@ -26,8 +26,8 @@ import com.example.data.model.UnitExpenseEntity
         MaintenanceTaskEntity::class,
         InventoryBatchEntity::class
     ],
-    version = 6,
-    exportSchema = false
+    version = 7,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun fleetDao(): FleetDao
@@ -38,11 +38,23 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
+                INSTANCE?.let { return it }
+                // Copia del archivo original ANTES de convertirlo a la versión nueva (ver DbSafety)
+                try {
+                    DbSafety.snapshotIfUpgrading(context.applicationContext, DbMigrations.CURRENT_VERSION)
+                } catch (_: Exception) {
+                    // Si no se pudo copiar (poco espacio, etc.), se sigue: la migración igual conserva los datos.
+                }
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "motoflota_database.db"
-                ).fallbackToDestructiveMigration().build()
+                    DbSafety.DB_NAME
+                )
+                    // Solo las versiones 1-5 (pruebas de desarrollo) pueden reiniciarse.
+                    // Desde la versión 6 TODO cambio de estructura exige una Migration que conserve los datos.
+                    .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5)
+                    .addMigrations(*DbMigrations.ALL)
+                    .build()
                 INSTANCE = instance
                 instance
             }
