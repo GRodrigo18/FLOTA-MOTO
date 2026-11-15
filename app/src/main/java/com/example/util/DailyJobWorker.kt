@@ -58,7 +58,11 @@ class DailyJobWorker(
         if (MonthlyRevision.checkAndMark(prefs)) repo.resetMonthlyRevision()
 
         val units = repo.allUnits.first()
-        if (units.isEmpty()) return
+        if (units.isEmpty()) {
+            // Sin motos no hay nada pendiente: se quita el resumen fijo si quedó alguno.
+            NotificationHelper.cancelRemindersSummary(ctx)
+            return
+        }
 
         val payments = repo.allDailyPayments.first()
         val inventory = repo.allInventory.first()
@@ -71,7 +75,7 @@ class DailyJobWorker(
             it.categoria == "Neumáticos" || it.nombre.contains("Llanta", ignoreCase = true) || it.nombre.contains("Neumático", ignoreCase = true)
         }
 
-        val alerts = AlertEngine.build(
+        val alerts = AlertEngine.sortByUrgency(AlertEngine.build(
             units = units.map { u ->
                 AlertUnit(
                     placa = u.placa,
@@ -90,7 +94,14 @@ class DailyJobWorker(
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llanta?.stock,
             minimoLlantas = llanta?.stockMinimo?.coerceAtLeast(1) ?: AlertEngine.STOCK_LLANTAS_MINIMO
-        )
+        ))
+
+        // Resumen fijo de recordatorios pendientes (todos, también los ocultos en Inicio)
+        if (notificationsEnabled) {
+            NotificationHelper.showRemindersSummary(ctx, alerts.map { it.titulo })
+        } else {
+            NotificationHelper.cancelRemindersSummary(ctx)
+        }
 
         // En la mañana se omite "revisión del mes" (es un aviso mensual, no diario)
         val lines = alerts

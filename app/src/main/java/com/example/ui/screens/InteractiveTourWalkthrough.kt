@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.ui.FleetUiState
 import com.example.ui.FleetViewModel
+import com.example.ui.TourNews
 import com.example.ui.theme.CyanAccent
 import com.example.ui.theme.NavyPrimary
 import kotlin.math.roundToInt
@@ -83,38 +84,53 @@ fun Modifier.tourTarget(id: String): Modifier = composed {
 /**
  * Un paso de la guía. [target] vacío = sin mano, solo la frase en el centro.
  * [adminOnly] = no se muestra a los cobradores (no ven Caja ni pueden anular).
- * [isNew] = función nueva de la v1.4: tras actualizar, la guía muestra solo estos pasos una vez.
+ * [since] = versión en que apareció el paso (0 = guía original, 14 = v1.4, 15 = v1.5). Tras actualizar,
+ * la guía muestra una vez solo los pasos más nuevos que la última versión vista
+ * ([FleetViewModel.tourNewsSinceVersion]).
  */
-private data class TourStep(
+internal data class TourStep(
     val tab: Int?,
     val target: String,
     val text: String,
     val adminOnly: Boolean = false,
-    val isNew: Boolean = false
+    val since: Int = 0
 )
 
 /** Pasos cortos: la mano señala y un texto de pocas palabras. Tocar en cualquier parte = siguiente. */
-private val ALL_TOUR_STEPS = listOf(
+internal val ALL_TOUR_STEPS = listOf(
     TourStep(0, "today_card", "Aquí ves quién pagó hoy"),
     TourStep(0, "nav_1", "Toca «Pagos» para cobrar"),
     TourStep(1, "pay_check_first", "Toca el cuadro cuando el chofer pague"),
     TourStep(1, "debts_tab", "Deudas y garantías, aquí"),
-    TourStep(1, "debts_tab", "¿Un cargo o abono mal puesto? Tócalo en Deudas y anúlalo", adminOnly = true, isNew = true),
+    TourStep(1, "debts_tab", "¿Un cargo o abono mal puesto? Tócalo en Deudas y anúlalo", adminOnly = true, since = 14),
     TourStep(2, "fleet_add", "Toca aquí para agregar una moto"),
-    TourStep(2, "fleet_unit_first", "Toca una moto: datos del chofer y su estado de cuenta", isNew = true),
-    TourStep(2, "fleet_unit_first", "¿Pagó incompleto? En la moto, «Registrar cobro»: lo que falta pasa a su deuda", isNew = true),
+    TourStep(2, "fleet_unit_first", "Toca una moto: datos del chofer y su estado de cuenta", since = 14),
+    TourStep(2, "fleet_unit_first", "¿Pagó incompleto? En la moto, «Registrar cobro»: lo que falta pasa a su deuda", since = 14),
     TourStep(4, "taller_add", "Anota cada arreglo aquí"),
     TourStep(4, "taller_send", "Manda una moto al taller"),
-    TourStep(4, "", "¿Te equivocaste en un trabajo? Toca «Anular» en la lista", adminOnly = true, isNew = true),
-    TourStep(3, "caja_report", "Envía el reporte del mes para Excel", adminOnly = true, isNew = true),
-    TourStep(3, "", "En «Historial», toca un movimiento para ver el detalle o anularlo", adminOnly = true, isNew = true),
+    TourStep(4, "", "¿Te equivocaste en un trabajo? Toca «Anular» en la lista", adminOnly = true, since = 14),
+    TourStep(3, "caja_report", "Envía el reporte del mes para Excel", adminOnly = true, since = 14),
+    TourStep(3, "", "En «Historial», toca un movimiento para ver el detalle o anularlo", adminOnly = true, since = 14),
+    TourStep(0, "", "¿Mucho en Inicio? Quítalo con el ojo: sigue en la campana", since = 15),
     TourStep(null, "bell", "Aquí llegan los avisos"),
+    TourStep(null, "bell", "Los recordatorios quedan aquí hasta que los resuelvas", since = 15),
     TourStep(null, "menu", "Usuarios, copias y más")
 )
 
-/** Pasos para esta persona: todos, o solo las novedades si ya hizo la guía antes. */
-private fun stepsFor(isAdmin: Boolean, newsOnly: Boolean): List<TourStep> =
-    ALL_TOUR_STEPS.filter { (isAdmin || !it.adminOnly) && (!newsOnly || it.isNew) }
+/**
+ * Pasos para esta persona: todos, o solo las novedades (since > versión ya vista) si ya hizo la guía.
+ * Nunca devuelve una lista vacía.
+ */
+internal fun stepsFor(
+    isAdmin: Boolean,
+    newsOnly: Boolean,
+    seenVersion: Int,
+    steps: List<TourStep> = ALL_TOUR_STEPS
+): List<TourStep> {
+    val forUser = steps.filter { isAdmin || !it.adminOnly }
+    if (!newsOnly) return forUser
+    return forUser.filter { TourNews.isStepShown(it.since, seenVersion) }.ifEmpty { forUser }
+}
 
 /**
  * Guía con gestos: oscurece la pantalla, ilumina el botón que hay que usar y muestra una mano
@@ -126,7 +142,8 @@ fun InteractiveTourWalkthrough(
     viewModel: FleetViewModel
 ) {
     val newsOnly by viewModel.tourNewsOnly.collectAsState()
-    val tourSteps = remember(state.isAdmin, newsOnly) { stepsFor(state.isAdmin, newsOnly) }
+    val seenVersion by viewModel.tourNewsSinceVersion.collectAsState()
+    val tourSteps = remember(state.isAdmin, newsOnly, seenVersion) { stepsFor(state.isAdmin, newsOnly, seenVersion) }
     val stepIndex = state.interactiveTourStep.coerceIn(0, tourSteps.lastIndex)
     val step = tourSteps[stepIndex]
     val density = LocalDensity.current

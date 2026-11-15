@@ -91,6 +91,18 @@ el ingreso se bloquea 30 segundos.
 - Se pide el permiso de notificaciones (Android 13+) al ingresar, y se programan los dos avisos
   diarios automáticamente.
 
+## Cambios de la versión 1.5 (recordatorios que no se pierden, 14 nov 2026)
+
+- **Los recordatorios ya no se borran a mano**: un aviso de contrato por vencer, SOAT, revisión, deuda, cobros del día o stock se queda hasta que **se resuelve** (renovar o editar el contrato en la moto, renovar el SOAT, pagar la deuda, marcar la revisión, comprar stock, cobrar la cuota). Al resolverlo se quita solo.
+- **Inicio vs campana**:
+  - En **Inicio**, el ojo tachado ("Quitar de Inicio") lo saca de la pantalla para que no se vea cargado. **Sigue en la campana** 🔔. Si hay ocultos, Inicio muestra "N recordatorio(s) en la campana" y al tocarlo se abre la campana.
+  - Si el problema empeora (ej. el contrato pasa de "por vencer" a "vencido", o el SOAT vence), vuelve a salir en Inicio.
+  - La **campana** ("Recordatorios pendientes") muestra **todos**, siempre, del más urgente al menos urgente, sin botón para borrar. Los ocultos en Inicio dicen "Oculto en Inicio" y tienen "Mostrar en Inicio". El número rojo de la campana cuenta todos.
+- **Tocar un recordatorio lleva a resolverlo**: contrato → ficha de la moto en Flota (Renovar / Editar); SOAT y revisión → editar la moto; deuda → registrar abono; cobros del día → Pagos; stock → Taller.
+- **Notificación fija y silenciosa** en el celular: "MotoFlota: N recordatorios pendientes", sin sonido ni vibración, que no se puede deslizar mientras haya pendientes y desaparece sola cuando ya no hay. Al tocarla se abre la app (pide el PIN si hace falta) con la campana abierta. Cada recordatorio sigue avisando una vez al día mientras no se resuelva, aunque esté oculto en Inicio. Respeta "Silenciar avisos".
+- **Guía actualizada**: quien ya hizo la guía verá una sola vez solo las **NOVEDADES** de esta versión (la campana de recordatorios y el ojo de Inicio).
+- Versión 6 / 1.5. Sin cambios en la base de datos (sigue en la versión 7): actualizar no toca los datos.
+
 ## Cambios de la versión 1.4 (auditoría completa, 6 nov 2026)
 
 ### Errores corregidos

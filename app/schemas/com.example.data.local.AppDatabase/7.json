@@ -1,0 +1,732 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "7cee5dedd74defa9b510e3162e718c6b",
+    "entities": [
+      {
+        "tableName": "fleet_units",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombreMoto` TEXT NOT NULL, `placa` TEXT NOT NULL, `cliente` TEXT NOT NULL, `telefono` TEXT NOT NULL, `estado` TEXT NOT NULL, `cuotaDiaria` REAL NOT NULL, `deudaGarantia` REAL NOT NULL, `deudaTotal` REAL NOT NULL, `progresoContrato` REAL NOT NULL, `inicioContrato` TEXT NOT NULL, `finContrato` TEXT NOT NULL, `tipoDuracion` TEXT NOT NULL, `soatInicio` TEXT NOT NULL, `soatFin` TEXT NOT NULL, `soatVence` TEXT NOT NULL, `soatDiasRestantes` INTEGER NOT NULL, `revVence` TEXT NOT NULL, `revDiasRestantes` INTEGER NOT NULL, `revisionTecnicaMesRealizada` INTEGER NOT NULL, `kilometraje` INTEGER NOT NULL, `observaciones` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreMoto",
+            "columnName": "nombreMoto",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placa",
+            "columnName": "placa",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cliente",
+            "columnName": "cliente",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telefono",
+            "columnName": "telefono",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estado",
+            "columnName": "estado",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cuotaDiaria",
+            "columnName": "cuotaDiaria",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deudaGarantia",
+            "columnName": "deudaGarantia",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deudaTotal",
+            "columnName": "deudaTotal",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progresoContrato",
+            "columnName": "progresoContrato",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inicioContrato",
+            "columnName": "inicioContrato",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finContrato",
+            "columnName": "finContrato",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipoDuracion",
+            "columnName": "tipoDuracion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soatInicio",
+            "columnName": "soatInicio",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soatFin",
+            "columnName": "soatFin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soatVence",
+            "columnName": "soatVence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "soatDiasRestantes",
+            "columnName": "soatDiasRestantes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revVence",
+            "columnName": "revVence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revDiasRestantes",
+            "columnName": "revDiasRestantes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionTecnicaMesRealizada",
+            "columnName": "revisionTecnicaMesRealizada",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kilometraje",
+            "columnName": "kilometraje",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observaciones",
+            "columnName": "observaciones",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "daily_payments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fecha` TEXT NOT NULL, `unitPlaca` TEXT NOT NULL, `nombreMoto` TEXT NOT NULL, `cuotaMonto` REAL NOT NULL, `pagado` INTEGER NOT NULL, `hora` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreMoto",
+            "columnName": "nombreMoto",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cuotaMonto",
+            "columnName": "cuotaMonto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pagado",
+            "columnName": "pagado",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hora",
+            "columnName": "hora",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "debt_records",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `unitPlaca` TEXT NOT NULL, `nombreMoto` TEXT NOT NULL, `tipo` TEXT NOT NULL, `monto` REAL NOT NULL, `motivo` TEXT NOT NULL, `fecha` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreMoto",
+            "columnName": "nombreMoto",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo",
+            "columnName": "tipo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monto",
+            "columnName": "monto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motivo",
+            "columnName": "motivo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "detailed_maintenances",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `unitPlaca` TEXT NOT NULL, `nombreMoto` TEXT NOT NULL, `fecha` TEXT NOT NULL, `mesAno` TEXT NOT NULL, `tipoTrabajo` TEXT NOT NULL, `detallesDescripcion` TEXT NOT NULL, `costoGeneral` REAL NOT NULL, `costoFrenos` REAL NOT NULL, `costoLlantas` REAL NOT NULL, `costoPlanchado` REAL NOT NULL, `costoCablesCambio` REAL NOT NULL, `costoCana` REAL NOT NULL, `costoBajadaMotorCompleto` REAL NOT NULL, `costoBajadaMedioMotor` REAL NOT NULL, `costoOtros` REAL NOT NULL, `botellasAceite` INTEGER NOT NULL, `precioBotellaAceite` REAL NOT NULL, `costoAceiteTotal` REAL NOT NULL, `llantasUsadas` INTEGER NOT NULL, `precioLlanta` REAL NOT NULL, `costoLlantasTotal` REAL NOT NULL, `costoTotal` REAL NOT NULL, `motivoDetallado` TEXT NOT NULL, `componenteMasCostoso` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombreMoto",
+            "columnName": "nombreMoto",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mesAno",
+            "columnName": "mesAno",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipoTrabajo",
+            "columnName": "tipoTrabajo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detallesDescripcion",
+            "columnName": "detallesDescripcion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoGeneral",
+            "columnName": "costoGeneral",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoFrenos",
+            "columnName": "costoFrenos",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoLlantas",
+            "columnName": "costoLlantas",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoPlanchado",
+            "columnName": "costoPlanchado",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoCablesCambio",
+            "columnName": "costoCablesCambio",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoCana",
+            "columnName": "costoCana",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoBajadaMotorCompleto",
+            "columnName": "costoBajadaMotorCompleto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoBajadaMedioMotor",
+            "columnName": "costoBajadaMedioMotor",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoOtros",
+            "columnName": "costoOtros",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "botellasAceite",
+            "columnName": "botellasAceite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precioBotellaAceite",
+            "columnName": "precioBotellaAceite",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoAceiteTotal",
+            "columnName": "costoAceiteTotal",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "llantasUsadas",
+            "columnName": "llantasUsadas",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precioLlanta",
+            "columnName": "precioLlanta",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoLlantasTotal",
+            "columnName": "costoLlantasTotal",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costoTotal",
+            "columnName": "costoTotal",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motivoDetallado",
+            "columnName": "motivoDetallado",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "componenteMasCostoso",
+            "columnName": "componenteMasCostoso",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "unit_expenses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `unitPlaca` TEXT NOT NULL, `motivo` TEXT NOT NULL, `monto` REAL NOT NULL, `fecha` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motivo",
+            "columnName": "motivo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monto",
+            "columnName": "monto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "finance_movements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `concepto` TEXT NOT NULL, `monto` REAL NOT NULL, `esIngreso` INTEGER NOT NULL, `categoria` TEXT NOT NULL, `fecha` TEXT NOT NULL, `unitPlaca` TEXT, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "concepto",
+            "columnName": "concepto",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "monto",
+            "columnName": "monto",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "esIngreso",
+            "columnName": "esIngreso",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoria",
+            "columnName": "categoria",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "inventory_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `categoria` TEXT NOT NULL, `stock` INTEGER NOT NULL, `stockMinimo` INTEGER NOT NULL, `unidadMedida` TEXT NOT NULL, `precioUnitario` REAL NOT NULL, `descripcion` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoria",
+            "columnName": "categoria",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stock",
+            "columnName": "stock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stockMinimo",
+            "columnName": "stockMinimo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unidadMedida",
+            "columnName": "unidadMedida",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precioUnitario",
+            "columnName": "precioUnitario",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descripcion",
+            "columnName": "descripcion",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "maintenance_tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `unitPlaca` TEXT NOT NULL, `motivo` TEXT NOT NULL, `urgencia` TEXT NOT NULL, `fechaProgramada` TEXT NOT NULL, `completado` INTEGER NOT NULL, `costo` REAL NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPlaca",
+            "columnName": "unitPlaca",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motivo",
+            "columnName": "motivo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "urgencia",
+            "columnName": "urgencia",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaProgramada",
+            "columnName": "fechaProgramada",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completado",
+            "columnName": "completado",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costo",
+            "columnName": "costo",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "inventory_batches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `categoria` TEXT NOT NULL, `nombre` TEXT NOT NULL, `cantidadInicial` INTEGER NOT NULL, `cantidadDisponible` INTEGER NOT NULL, `precioUnitario` REAL NOT NULL, `fecha` TEXT NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "categoria",
+            "columnName": "categoria",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadInicial",
+            "columnName": "cantidadInicial",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadDisponible",
+            "columnName": "cantidadDisponible",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precioUnitario",
+            "columnName": "precioUnitario",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7cee5dedd74defa9b510e3162e718c6b')"
+    ]
+  }
+}

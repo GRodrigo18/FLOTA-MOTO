@@ -20,10 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ElectricRickshaw
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -64,11 +64,19 @@ private fun alertIcon(tipo: AlertType): ImageVector = when (tipo) {
 /** Lo urgente (SOAT, stock) va en rojo; lo demás en ámbar. */
 private fun isUrgent(alert: UrgentAlert) = alert.tipo == AlertType.SOAT || alert.tipo == AlertType.STOCK
 
-/** Al tocar una alerta se abre directamente lo que hay que hacer, sin botones intermedios. */
+/**
+ * Al tocar un recordatorio se abre directamente lo que hay que hacer, sin botones intermedios.
+ * Contrato → ficha de la moto en Flota (Renovar/Editar); SOAT y revisión → editar la moto;
+ * deuda de una moto → abono; cobros del día → Pagos; stock → Taller.
+ */
 fun openAlertTarget(alert: UrgentAlert, state: FleetUiState, viewModel: FleetViewModel) {
     val unit = state.units.firstOrNull { it.placa == alert.unitPlaca }
     when (alert.tipo) {
-        AlertType.SOAT, AlertType.CONTRATO, AlertType.REVISION ->
+        AlertType.CONTRATO -> {
+            viewModel.onTabSelected(2)
+            if (unit != null) viewModel.selectUnit(unit)
+        }
+        AlertType.SOAT, AlertType.REVISION ->
             if (unit != null) viewModel.openDialogFromAlert(DialogType.EDIT_CONTRACT_SOAT, unit) else viewModel.onTabSelected(2)
         AlertType.DEUDA ->
             if (unit != null) viewModel.openDialogFromAlert(DialogType.ADD_DEBT_ABONO, unit) else viewModel.onTabSelected(1)
@@ -77,15 +85,20 @@ fun openAlertTarget(alert: UrgentAlert, state: FleetUiState, viewModel: FleetVie
 }
 
 /**
- * Fila de alerta: tocarla lleva a resolverla; la X la oculta hasta mañana.
+ * Fila de recordatorio: tocarla lleva a resolverlo. Se quita sola cuando se resuelve.
+ * [onHideFromHome] != null (Inicio) → ojo tachado "Quitar de Inicio" (sigue en la campana).
+ * En la campana no hay botón para quitar; si está oculto en Inicio se ve la etiqueta
+ * "Oculto en Inicio" y la acción [onShowOnHome].
  * Los avisos al celular salen solos (ver FleetViewModel.startAutomaticWork y DailyJobWorker).
  */
 @Composable
 fun AlertRow(
     alert: UrgentAlert,
     onOpen: () -> Unit,
-    onHide: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onHideFromHome: (() -> Unit)? = null,
+    hiddenFromHome: Boolean = false,
+    onShowOnHome: (() -> Unit)? = null
 ) {
     val accent = if (isUrgent(alert)) DangerRed else WarningAmber
     val textAccent = if (isUrgent(alert)) DangerRedText else WarningAmberText
@@ -100,7 +113,12 @@ fun AlertRow(
             .testTag("alert_row_${alert.id}")
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+            modifier = Modifier.padding(
+                start = 12.dp,
+                top = 10.dp,
+                bottom = 10.dp,
+                end = if (onHideFromHome != null) 4.dp else 10.dp
+            ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -128,6 +146,32 @@ fun AlertRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (hiddenFromHome) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                "Oculto en Inicio",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        if (onShowOnHome != null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = onShowOnHome,
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("alert_show_home_${alert.id}")
+                            ) {
+                                Text("Mostrar en Inicio", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                }
             }
             Icon(
                 Icons.Default.ChevronRight,
@@ -135,13 +179,16 @@ fun AlertRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
-            IconButton(onClick = onHide) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Ocultar hasta mañana",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
+            if (onHideFromHome != null) {
+                // IconButton mantiene el área táctil de 48dp
+                IconButton(onClick = onHideFromHome, modifier = Modifier.testTag("alert_hide_home_${alert.id}")) {
+                    Icon(
+                        Icons.Default.VisibilityOff,
+                        contentDescription = "Quitar de Inicio",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -170,7 +217,10 @@ fun AllClearRow(modifier: Modifier = Modifier) {
     }
 }
 
-/** Ventana de la campana: la lista completa de alertas, sin botones de "avisar". */
+/**
+ * Ventana de la campana: TODOS los recordatorios pendientes, siempre. No se pueden borrar:
+ * se quitan solos cuando se resuelve el problema (renovar contrato, pagar deuda, etc.).
+ */
 @Composable
 fun EmergentAlertsDialog(
     state: FleetUiState,
@@ -183,9 +233,9 @@ fun EmergentAlertsDialog(
         modifier = Modifier.testTag("emergent_alerts_dialog"),
         title = {
             Column {
-                Text("Pendientes", style = MaterialTheme.typography.titleLarge)
+                Text("Recordatorios pendientes", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    text = if (alerts.isEmpty()) "Nada pendiente" else "Toca una alerta para resolverla",
+                    text = if (alerts.isEmpty()) "Nada pendiente" else "Se quitan solos cuando lo resuelves",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -199,14 +249,15 @@ fun EmergentAlertsDialog(
                     modifier = Modifier.heightIn(max = 460.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(alerts, key = { it.id }) { alert ->
+                    items(alerts, key = { it.hideKey }) { alert ->
                         AlertRow(
                             alert = alert,
                             onOpen = {
                                 onDismiss()
                                 openAlertTarget(alert, state, viewModel)
                             },
-                            onHide = { viewModel.dismissAlert(alert.id) }
+                            hiddenFromHome = alert.hideKey in state.homeHiddenKeys,
+                            onShowOnHome = { viewModel.showAlertOnHome(alert) }
                         )
                     }
                 }

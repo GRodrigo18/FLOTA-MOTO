@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,7 +71,9 @@ fun DashboardScreen(
     viewModel: FleetViewModel,
     modifier: Modifier = Modifier
 ) {
-    val alerts = state.urgentAlerts
+    // Inicio muestra solo lo no ocultado; la campana siempre tiene todo.
+    val alerts = state.homeAlerts
+    val hiddenCount = (state.urgentAlerts.size - alerts.size).coerceAtLeast(0)
     // Siempre HOY (antes dependía de la fecha elegida en la pestaña Pagos)
     val hoy = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
     val pagosHoy = state.dailyPayments.filter { it.fecha == hoy && it.pagado }
@@ -99,23 +102,28 @@ fun DashboardScreen(
             )
         }
 
-        // 2. Pendientes (sin botones: tocar = resolver, X = ocultar hasta mañana)
+        // 2. Pendientes: tocar = resolver; el ojo lo quita de Inicio (sigue en la campana).
         item {
             SectionTitle(
                 text = if (alerts.isEmpty()) "Pendientes" else "Pendientes (${alerts.size})",
                 action = if (alerts.size > maxVisibleAlerts) "Ver todas" else null,
-                onAction = { viewModel.openDialog(DialogType.EMERGENT_ALERTS) }
+                onAction = { viewModel.requestOpenAlerts() }
             )
         }
-        if (alerts.isEmpty()) {
+        if (state.urgentAlerts.isEmpty()) {
             item { AllClearRow() }
         } else {
-            items(alerts.take(maxVisibleAlerts), key = { it.id }) { alert ->
+            items(alerts.take(maxVisibleAlerts), key = { it.hideKey }) { alert ->
                 AlertRow(
                     alert = alert,
                     onOpen = { openAlertTarget(alert, state, viewModel) },
-                    onHide = { viewModel.dismissAlert(alert.id) }
+                    onHideFromHome = { viewModel.hideAlertFromHome(alert) }
                 )
+            }
+            if (hiddenCount > 0) {
+                item(key = "hidden_in_bell") {
+                    HiddenInBellLine(count = hiddenCount, onClick = { viewModel.requestOpenAlerts() })
+                }
             }
         }
 
@@ -290,6 +298,33 @@ private fun TodayCollectionCard(
                 )
                 Text("Ver lista ›", style = MaterialTheme.typography.labelLarge, color = CyanAccent)
             }
+        }
+    }
+}
+
+/** Línea corta cuando hay recordatorios quitados de Inicio: abre la campana. */
+@Composable
+private fun HiddenInBellLine(count: Int, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .testTag("home_hidden_in_bell")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (count == 1) "1 recordatorio en la campana 🔔" else "$count recordatorios en la campana 🔔",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Text("Ver", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

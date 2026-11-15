@@ -16,8 +16,16 @@ data class UrgentAlert(
     val titulo: String,
     val descripcion: String,
     val unitPlaca: String?,
-    val hora: String = "Ahora"
-)
+    val hora: String = "Ahora",
+    /**
+     * Clave para "Quitar de Inicio": id + etapa de gravedad. Si el problema empeora
+     * (p. ej. contrato "por vencer" → "vencido") la clave cambia y vuelve a verse en Inicio.
+     */
+    val hideKey: String = id
+) {
+    /** true si es un SOAT o contrato ya vencido (lo más urgente). */
+    val isVencido: Boolean get() = hideKey.endsWith(AlertEngine.STAGE_SEPARATOR + AlertEngine.STAGE_VENCIDO)
+}
 
 /** Datos mínimos de una moto para evaluar alertas (sin depender de Room). */
 data class AlertUnit(
@@ -43,6 +51,31 @@ object AlertEngine {
     const val HORA_COBROS = 17
     const val STOCK_LLANTAS_MINIMO = 2
 
+    // Etapas de gravedad que forman parte de la clave para ocultar en Inicio
+    const val STAGE_SEPARATOR = "#"
+    const val STAGE_VENCIDO = "vencido"
+    const val STAGE_PRONTO = "pronto"
+
+    /** Clave de ocultar: el id solo, o "id#etapa" si la alerta tiene etapas (SOAT y contrato). */
+    fun hideKeyFor(id: String, stage: String = ""): String =
+        if (stage.isBlank()) id else "$id$STAGE_SEPARATOR$stage"
+
+    /**
+     * Ordena de más urgente a menos: vencidos primero, luego SOAT, contratos, deudas de cada moto,
+     * revisión del mes, cobros del día y al final el stock. Mantiene el orden original en empates.
+     */
+    fun sortByUrgency(alerts: List<UrgentAlert>): List<UrgentAlert> =
+        alerts.sortedWith(compareBy<UrgentAlert>({ if (it.isVencido) 0 else 1 }, { urgencyRank(it) }))
+
+    private fun urgencyRank(a: UrgentAlert): Int = when {
+        a.tipo == AlertType.SOAT -> 0
+        a.tipo == AlertType.CONTRATO -> 1
+        a.tipo == AlertType.DEUDA && a.unitPlaca != null -> 2
+        a.tipo == AlertType.REVISION -> 3
+        a.tipo == AlertType.DEUDA -> 4 // cobros_hoy (sin moto)
+        else -> 5 // STOCK
+    }
+
     /** Una moto debe cuota diaria si está en operación y tiene chofer asignado. */
     fun debeCuotaDiaria(u: AlertUnit): Boolean =
         (u.estado == "Vigente" || u.estado == "Por Vencer") &&
@@ -58,8 +91,10 @@ object AlertEngine {
         stockLlantas: Int? = null,
         minimoLlantas: Int = STOCK_LLANTAS_MINIMO
     ): List<UrgentAlert> = buildList {
+        // [dismissed] se mantiene por compatibilidad (acepta id o hideKey); la app ya no lo usa:
+        // los recordatorios solo desaparecen cuando se resuelven.
         fun addIfNew(alert: UrgentAlert) {
-            if (alert.id !in dismissed) add(alert)
+            if (alert.id !in dismissed && alert.hideKey !in dismissed) add(alert)
         }
 
         units.forEach { u ->
@@ -75,7 +110,8 @@ object AlertEngine {
                         descripcion = if (u.soatDias <= 0) "Venció el ${u.soatFin}. ¡Renovar de inmediato!"
                         else "Vence en ${u.soatDias} días (${u.soatFin}). ¡Renovar pronto!",
                         unitPlaca = u.placa,
-                        hora = if (u.soatDias <= 0) "Vencido" else "Ahora"
+                        hora = if (u.soatDias <= 0) "Vencido" else "Ahora",
+                        hideKey = hideKeyFor("soat_${u.placa}", if (u.soatDias <= 0) STAGE_VENCIDO else STAGE_PRONTO)
                     )
                 )
             }
@@ -107,7 +143,8 @@ object AlertEngine {
                             else -> "El contrato vence en $diasContrato días (${u.finContrato}) • ${u.placa}."
                         },
                         unitPlaca = u.placa,
-                        hora = "Pronto"
+                        hora = "Pronto",
+                        hideKey = hideKeyFor("contrato_${u.placa}", if (diasContrato < 0) STAGE_VENCIDO else STAGE_PRONTO)
                     )
                 )
             }

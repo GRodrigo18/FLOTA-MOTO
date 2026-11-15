@@ -34,6 +34,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -98,7 +99,10 @@ data class FleetUiState(
     val selectedInventoryItem: InventoryItemEntity? = null,
     val messageSnackbar: String? = null,
     val isDarkMode: Boolean = false,
-    val dismissedAlertIds: Set<String> = emptySet(),
+    /** Claves ([UrgentAlert.hideKey]) de recordatorios quitados de Inicio (siguen en la campana). */
+    val homeHiddenKeys: Set<String> = emptySet(),
+    /** true cuando ya se leyó la base de datos (antes, la lista vacía no significa "todo resuelto"). */
+    val dataLoaded: Boolean = false,
     val userEmail: String = "",
     val userName: String = "Administrador",
     val hasUsedHistory: Boolean = false,
@@ -176,10 +180,12 @@ data class FleetUiState(
         }
     }
 
-    // Alertas operativas (las mismas reglas que usa el aviso diario en segundo plano)
+    // Recordatorios (las mismas reglas que usa el aviso diario en segundo plano). Son TODOS los
+    // activos, de más urgente a menos: solo desaparecen cuando se resuelve el problema.
+    // Los usan la campana, su contador y los avisos al celular.
     val urgentAlerts: List<UrgentAlert> get() {
         val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        return AlertEngine.build(
+        return AlertEngine.sortByUrgency(AlertEngine.build(
             units = units.map { u ->
                 AlertUnit(
                     placa = u.placa,
@@ -196,11 +202,13 @@ data class FleetUiState(
             paidTodayPlacas = dailyPayments.filter { it.fecha == hoy && it.pagado }.map { it.unitPlaca }.toSet(),
             stockAceite = if (inventory.isNotEmpty()) stockAceiteBotellas else null,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
-            dismissed = dismissedAlertIds,
             stockLlantas = llantaItem?.stock,
             minimoLlantas = llantaItem?.stockMinimo?.coerceAtLeast(1) ?: AlertEngine.STOCK_LLANTAS_MINIMO
-        )
+        ))
     }
+
+    /** Recordatorios que se muestran en Inicio: todos menos los quitados de Inicio. */
+    val homeAlerts: List<UrgentAlert> get() = urgentAlerts.filter { it.hideKey !in homeHiddenKeys }
 }
 
 class FleetViewModel(application: Application) : AndroidViewModel(application) {
@@ -223,7 +231,11 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedInventoryItem = MutableStateFlow<InventoryItemEntity?>(null)
     private val _messageSnackbar = MutableStateFlow<String?>(null)
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
-    private val _dismissedAlertIds = MutableStateFlow(AlertMemory.dismissedToday(prefs))
+    private val _homeHiddenKeys = MutableStateFlow(AlertMemory.homeHidden(prefs))
+
+    /** true = alguien pidió abrir la campana (aviso tocado, línea de Inicio...). Ver [consumeOpenAlertsRequest]. */
+    private val _openAlertsRequests = MutableStateFlow(false)
+    val openAlertsRequests: StateFlow<Boolean> = _openAlertsRequests
     private val _currentUser = MutableStateFlow<AppUser?>(null)
     private val _users = MutableStateFlow(UserStore.users(prefs))
 
@@ -254,7 +266,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     /** true = la guía muestra solo las novedades de esta versión (para quien ya hizo la guía). */
     private val _tourNewsOnly = MutableStateFlow(false)
     val tourNewsOnly: StateFlow<Boolean> = _tourNewsOnly
-    private val TOUR_NEWS_KEY = "tour_news_v14_seen"
+
+    /**
+     * Pasos de la guía a mostrar: los que tienen `since` > este valor.
+     * En la guía completa vale -1 (se ven todos); en modo novedades es la última versión vista.
+     */
+    private val _tourNewsSinceVersion = MutableStateFlow(-1)
+    val tourNewsSinceVersion: StateFlow<Int> = _tourNewsSinceVersion
     private val _interactiveTourStep = MutableStateFlow(0)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -302,9 +320,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             _selectedInventoryItem,
             _messageSnackbar,
             _isDarkMode,
-            _dismissedAlertIds
-        ) { dialog, invItem, snackbar, isDark, dismissed ->
-            Tuple5(dialog, invItem, snackbar, isDark, dismissed)
+            _homeHiddenKeys
+        ) { dialog, invItem, snackbar, isDark, hidden ->
+            Tuple5(dialog, invItem, snackbar, isDark, hidden)
         },
         combine(
             combine(
@@ -348,7 +366,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         val invItem = t4.v2
         val snackbar = t4.v3
         val isDark = t4.v4
-        val dismissed = t4.v5
+        val homeHidden = t4.v5
 
         val email = t5.v1
         val (name, currentUser, allUsers) = t5.v2
@@ -400,7 +418,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             selectedInventoryItem = invItem,
             messageSnackbar = snackbar,
             isDarkMode = isDark,
-            dismissedAlertIds = dismissed,
+            homeHiddenKeys = homeHidden,
+            dataLoaded = true,
             userEmail = email,
             userName = name,
             hasUsedHistory = usedHist || units.isNotEmpty() || dailyPayments.isNotEmpty(),
@@ -422,15 +441,32 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     // Trabajo automático mientras la app está abierta (sin botones):
-    //  1) Avisar al celular las alertas NUEVAS del día, una sola vez cada una.
-    //  2) Guardar el respaldo en la carpeta de sincronización tras cada cambio de datos.
+    //  1) Olvidar los "quitados de Inicio" que ya se resolvieron.
+    //  2) Avisar al celular los recordatorios del día, una sola vez cada uno (también los ocultos),
+    //     y mantener al día el aviso fijo "N recordatorios pendientes".
+    //  3) Guardar el respaldo en la carpeta de sincronización tras cada cambio de datos.
     @OptIn(FlowPreview::class)
     private fun startAutomaticWork() {
         viewModelScope.launch {
             uiState
+                .filter { it.dataLoaded }
+                .map { st -> st.urgentAlerts.map { it.hideKey } }
+                .distinctUntilChanged()
+                .collect { activeKeys -> pruneHomeHidden(activeKeys) }
+        }
+        viewModelScope.launch {
+            uiState
+                .filter { it.dataLoaded }
                 .map { st -> if (st.isLoggedIn) st.urgentAlerts else emptyList() }
                 .distinctUntilChanged()
                 .collect { alerts -> notifyNewAlerts(alerts) }
+        }
+        viewModelScope.launch {
+            uiState
+                .filter { it.dataLoaded && it.isLoggedIn }
+                .map { st -> st.notificationsEnabled to st.urgentAlerts.map { it.titulo } }
+                .distinctUntilChanged()
+                .collect { (enabled, titles) -> updateRemindersSummary(enabled, titles) }
         }
         viewModelScope.launch {
             uiState
@@ -445,6 +481,23 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun pruneHomeHidden(activeKeys: List<String>) {
+        val current = _homeHiddenKeys.value
+        val pruned = AlertMemory.prune(current, activeKeys)
+        if (pruned != current) {
+            _homeHiddenKeys.value = pruned
+            AlertMemory.saveHomeHidden(prefs, pruned)
+        }
+    }
+
+    /** Aviso fijo y silencioso con todos los recordatorios pendientes (se quita al llegar a 0). */
+    private fun updateRemindersSummary(enabled: Boolean, titles: List<String>) {
+        val app = getApplication<Application>()
+        if (enabled) NotificationHelper.showRemindersSummary(app, titles)
+        else NotificationHelper.cancelRemindersSummary(app)
+    }
+
+    /** Recibe TODOS los recordatorios activos (los ocultos en Inicio también avisan). */
     private fun notifyNewAlerts(alerts: List<UrgentAlert>) {
         if (alerts.isEmpty()) return
         val app = getApplication<Application>()
@@ -549,16 +602,18 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         _currentUser.value = _users.value.firstOrNull { it.id == userId }
         _activeTab.value = 0
         _isLoggedIn.value = true
-        val hasDoneTour = prefs.getBoolean("has_completed_interactive_tour_v2", false)
-        val hasSeenNews = prefs.getBoolean(TOUR_NEWS_KEY, false)
+        val hasDoneTour = prefs.getBoolean(TourNews.KEY_TOUR_DONE, false)
+        val seenVersion = tourSeenVersion()
         if (!hasDoneTour) {
             // Primera vez: la guía completa
             _tourNewsOnly.value = false
+            _tourNewsSinceVersion.value = -1
             _isInteractiveTourActive.value = true
             _interactiveTourStep.value = 0
-        } else if (!hasSeenNews) {
+        } else if (seenVersion < TourNews.CURRENT_VERSION) {
             // Ya conocía la app: tras actualizar se muestran solo las funciones nuevas, una vez
             _tourNewsOnly.value = true
+            _tourNewsSinceVersion.value = seenVersion
             _isInteractiveTourActive.value = true
             _interactiveTourStep.value = 0
         }
@@ -647,8 +702,21 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         return null
     }
 
+    /** Última versión de novedades vista, migrando la marca de la v1.4 la primera vez. */
+    private fun tourSeenVersion(): Int {
+        val stored = if (prefs.contains(TourNews.KEY_SEEN_VERSION)) prefs.getInt(TourNews.KEY_SEEN_VERSION, -1) else null
+        val seen = TourNews.resolveSeenVersion(
+            storedVersion = stored,
+            v14Seen = prefs.getBoolean(TourNews.OLD_KEY_V14_SEEN, false),
+            completedTour = prefs.getBoolean(TourNews.KEY_TOUR_DONE, false)
+        )
+        if (stored == null && seen >= 0) prefs.edit().putInt(TourNews.KEY_SEEN_VERSION, seen).apply()
+        return seen
+    }
+
     fun startInteractiveTour() {
         _tourNewsOnly.value = false
+        _tourNewsSinceVersion.value = -1
         _isInteractiveTourActive.value = true
         _interactiveTourStep.value = 0
         _activeTab.value = 0
@@ -668,10 +736,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         _isInteractiveTourActive.value = false
         _activeDialog.value = null
         prefs.edit()
-            .putBoolean("has_completed_interactive_tour_v2", true)
-            .putBoolean(TOUR_NEWS_KEY, true)
+            .putBoolean(TourNews.KEY_TOUR_DONE, true)
+            .putBoolean(TourNews.OLD_KEY_V14_SEEN, true)
+            .putInt(TourNews.KEY_SEEN_VERSION, TourNews.CURRENT_VERSION)
             .apply()
         _tourNewsOnly.value = false
+        _tourNewsSinceVersion.value = -1
         _activeTab.value = 0
     }
 
@@ -820,7 +890,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             _users.value = emptyList()
             _userEmail.value = ""
             _userName.value = "Administrador"
-            _dismissedAlertIds.value = emptySet()
+            _homeHiddenKeys.value = emptySet()
+            NotificationHelper.cancelRemindersSummary(app)
             _isDarkMode.value = false
             _syncReady.value = false
             _hasUsedHistory.value = false
@@ -903,21 +974,38 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Oculta la alerta hasta mañana (se recuerda aunque se cierre la app). */
-    fun dismissAlert(id: String) {
-        _dismissedAlertIds.value = _dismissedAlertIds.value + id
-        AlertMemory.saveDismissed(prefs, _dismissedAlertIds.value)
+    // --- RECORDATORIOS: no se borran a mano, solo se quitan de Inicio ---
+
+    /** Quita el recordatorio de Inicio. Sigue en la campana (y avisando) hasta que se resuelva. */
+    fun hideAlertFromHome(alert: UrgentAlert) {
+        if (alert.hideKey in _homeHiddenKeys.value) return
+        _homeHiddenKeys.value = _homeHiddenKeys.value + alert.hideKey
+        AlertMemory.saveHomeHidden(prefs, _homeHiddenKeys.value)
+        showSnackbar("Sigue en la campana 🔔 hasta que lo resuelvas.")
     }
 
-    fun dismissAllAlerts(alertIds: List<String>) {
-        _dismissedAlertIds.value = _dismissedAlertIds.value + alertIds.toSet()
-        AlertMemory.saveDismissed(prefs, _dismissedAlertIds.value)
+    /** Vuelve a mostrar en Inicio un recordatorio que se había quitado. */
+    fun showAlertOnHome(alert: UrgentAlert) {
+        if (alert.hideKey !in _homeHiddenKeys.value) return
+        _homeHiddenKeys.value = _homeHiddenKeys.value - alert.hideKey
+        AlertMemory.saveHomeHidden(prefs, _homeHiddenKeys.value)
+    }
+
+    /** Pide abrir la campana (p. ej. al tocar el aviso del celular). */
+    fun requestOpenAlerts() {
+        _openAlertsRequests.value = true
+    }
+
+    /** Quien abre la campana marca el pedido como atendido. */
+    fun consumeOpenAlertsRequest() {
+        _openAlertsRequests.value = false
     }
 
     fun clearAllDatabaseData() {
         viewModelScope.launch {
             repository.clearAllData()
-            _dismissedAlertIds.value = emptySet()
+            _homeHiddenKeys.value = emptySet()
+            AlertMemory.saveHomeHidden(prefs, emptySet())
             _messageSnackbar.value = "Base de datos restaurada correctamente."
         }
     }
@@ -1836,3 +1924,28 @@ data class Tuple5<A, B, C, D, E>(val v1: A, val v2: B, val v3: C, val v4: D, val
 data class Tuple6<A, B, C, D, E, F>(val v1: A, val v2: B, val v3: C, val v4: D, val v5: E, val v6: F)
 data class Tuple7<A, B, C, D, E, F, G>(val v1: A, val v2: B, val v3: C, val v4: D, val v5: E, val v6: F, val v7: G)
 
+/**
+ * Novedades de la guía por versión. Cada paso de la guía tiene `since` (0 = original,
+ * 14 = v1.4, 15 = v1.5); en modo novedades se muestran los pasos con since > versión vista.
+ */
+object TourNews {
+    const val CURRENT_VERSION = 15
+    const val KEY_SEEN_VERSION = "tour_news_seen_version"
+    const val KEY_TOUR_DONE = "has_completed_interactive_tour_v2"
+    const val OLD_KEY_V14_SEEN = "tour_news_v14_seen"
+
+    /**
+     * Versión de novedades ya vista. Función pura.
+     * - Guardada → esa.
+     * - Sin guardar: marca vieja de la v1.4 → 14; guía completa hecha → 0; nunca hizo la guía → -1.
+     */
+    fun resolveSeenVersion(storedVersion: Int?, v14Seen: Boolean, completedTour: Boolean): Int = when {
+        storedVersion != null -> storedVersion
+        v14Seen -> 14
+        completedTour -> 0
+        else -> -1
+    }
+
+    /** true si un paso con [since] se muestra; [sinceVersion] = -1 muestra todos. */
+    fun isStepShown(since: Int, sinceVersion: Int): Boolean = since > sinceVersion
+}

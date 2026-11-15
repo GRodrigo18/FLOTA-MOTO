@@ -2,6 +2,8 @@ package com.example.ui
 
 import java.util.Calendar
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -70,7 +72,7 @@ class AlertEngineTest {
     }
 
     @Test
-    fun `una alerta descartada no vuelve a aparecer`() {
+    fun `por compatibilidad, dismissed todavia filtra por id`() {
         val alerts = AlertEngine.build(
             listOf(unit("A", soatDias = 3)), emptySet(), null, 10,
             dismissed = setOf("soat_A"), now = now
@@ -102,5 +104,77 @@ class AlertEngineTest {
         val alerts = AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, stockLlantas = 1, minimoLlantas = 2)
         assertEquals(listOf("stock_llantas"), alerts.map { it.id })
         assertTrue(AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, stockLlantas = 5, minimoLlantas = 2).isEmpty())
+    }
+
+    @Test
+    fun `sin dismissed se devuelven todos los recordatorios`() {
+        val motos = listOf(
+            unit("A", soatDias = 3, finContrato = "2026-10-16", deuda = 50.0, revisionPendiente = true),
+            unit("B")
+        )
+        val alerts = AlertEngine.build(motos, emptySet(), stockAceite = 2, hourOfDay = 18, now = now, stockLlantas = 0)
+        assertEquals(
+            setOf("soat_A", "rev_A", "contrato_A", "deuda_A", "cobros_hoy", "stock_llantas", "stock_aceite"),
+            alerts.map { it.id }.toSet()
+        )
+    }
+
+    @Test
+    fun `hideKey del SOAT cambia de pronto a vencido`() {
+        val pronto = AlertEngine.build(listOf(unit("A", soatDias = 5)), emptySet(), null, 10, now = now).first()
+        val vencido = AlertEngine.build(listOf(unit("A", soatDias = 0)), emptySet(), null, 10, now = now).first()
+        assertEquals("soat_A#pronto", pronto.hideKey)
+        assertEquals("soat_A#vencido", vencido.hideKey)
+        assertEquals(pronto.id, vencido.id)
+        assertFalse(pronto.isVencido)
+        assertTrue(vencido.isVencido)
+    }
+
+    @Test
+    fun `hideKey del contrato cambia al vencer, vence hoy sigue siendo pronto`() {
+        val hoy = AlertEngine.build(listOf(unit("A", finContrato = "2026-10-15")), emptySet(), null, 10, now = now).first()
+        val vencido = AlertEngine.build(listOf(unit("A", finContrato = "2026-10-14")), emptySet(), null, 10, now = now).first()
+        assertEquals("contrato_A#pronto", hoy.hideKey)
+        assertEquals("contrato_A#vencido", vencido.hideKey)
+        assertNotEquals(hoy.hideKey, vencido.hideKey)
+    }
+
+    @Test
+    fun `los demas recordatorios usan el id como hideKey`() {
+        val alerts = AlertEngine.build(
+            listOf(unit("A", deuda = 10.0, revisionPendiente = true)), emptySet(), stockAceite = 1, hourOfDay = 18, now = now
+        )
+        alerts.forEach { assertEquals(it.id, it.hideKey) }
+    }
+
+    @Test
+    fun `quitar de Inicio por contrato por vencer vuelve a mostrarlo al vencer`() {
+        val hidden = setOf("contrato_A#pronto")
+        val luego = AlertEngine.build(listOf(unit("A", finContrato = "2026-10-10")), emptySet(), null, 10, now = now)
+        val enInicio = luego.filter { it.hideKey !in hidden }
+        assertEquals(listOf("contrato_A"), enInicio.map { it.id })
+    }
+
+    @Test
+    fun `sortByUrgency pone vencidos primero y luego SOAT, contrato, deuda, revision, cobros y stock`() {
+        val motos = listOf(
+            unit("A", soatDias = 10, finContrato = "2026-10-16", deuda = 20.0, revisionPendiente = true),
+            unit("B", finContrato = "2026-10-01"), // contrato vencido
+            unit("C", soatDias = -2) // SOAT vencido
+        )
+        val alerts = AlertEngine.build(motos, emptySet(), stockAceite = 3, hourOfDay = 18, now = now)
+        val ordenados = AlertEngine.sortByUrgency(alerts.shuffled(java.util.Random(7)))
+        assertEquals(
+            listOf("soat_C", "contrato_B", "soat_A", "contrato_A", "deuda_A", "rev_A", "cobros_hoy", "stock_aceite"),
+            ordenados.map { it.id }
+        )
+    }
+
+    @Test
+    fun `sortByUrgency mantiene el orden original en empates`() {
+        val alerts = AlertEngine.build(
+            listOf(unit("A", deuda = 1.0), unit("B", deuda = 2.0)), emptySet(), null, 10, now = now
+        )
+        assertEquals(listOf("deuda_A", "deuda_B"), AlertEngine.sortByUrgency(alerts).map { it.id })
     }
 }

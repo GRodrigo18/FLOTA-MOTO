@@ -2,6 +2,7 @@ package com.example.util
 
 import java.util.Calendar
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,11 +18,40 @@ class AlertMemoryTest {
     }
 
     @Test
-    fun `una alerta oculta sigue oculta al reabrir la app y vuelve al dia siguiente`() {
+    fun `quitado de Inicio se recuerda sin caducar al dia siguiente`() {
         val prefs = FakeSharedPreferences()
-        AlertMemory.saveDismissed(prefs, setOf("soat_ABC"), day1)
-        assertEquals(setOf("soat_ABC"), AlertMemory.dismissedToday(prefs, day1))
-        assertTrue(AlertMemory.dismissedToday(prefs, day2).isEmpty())
+        AlertMemory.saveHomeHidden(prefs, setOf("contrato_ABC#pronto", "deuda_ABC"))
+        assertEquals(setOf("contrato_ABC#pronto", "deuda_ABC"), AlertMemory.homeHidden(prefs))
+        AlertMemory.saveHomeHidden(prefs, emptySet())
+        assertTrue(AlertMemory.homeHidden(prefs).isEmpty())
+    }
+
+    @Test
+    fun `las claves viejas por dia de la v1_4 se ignoran y se borran`() {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("alerts_dismissed_day", "2026-10-15").putString("alerts_dismissed_ids", "soat_ABC").apply()
+        assertTrue(AlertMemory.homeHidden(prefs).isEmpty())
+        AlertMemory.saveHomeHidden(prefs, setOf("x"))
+        assertFalse(prefs.contains("alerts_dismissed_ids"))
+        assertFalse(prefs.contains("alerts_dismissed_day"))
+    }
+
+    @Test
+    fun `prune olvida lo resuelto y conserva lo que sigue activo`() {
+        val hidden = setOf("deuda_A", "contrato_B#pronto", "stock_aceite")
+        val active = listOf("deuda_A", "contrato_B#pronto", "soat_C#pronto")
+        assertEquals(setOf("deuda_A", "contrato_B#pronto"), AlertMemory.prune(hidden, active))
+    }
+
+    @Test
+    fun `prune quita la etapa anterior cuando el contrato pasa a vencido`() {
+        val hidden = setOf("contrato_B#pronto")
+        assertTrue(AlertMemory.prune(hidden, listOf("contrato_B#vencido")).isEmpty())
+    }
+
+    @Test
+    fun `prune sin recordatorios activos lo olvida todo`() {
+        assertTrue(AlertMemory.prune(setOf("a", "b"), emptyList()).isEmpty())
     }
 
     @Test

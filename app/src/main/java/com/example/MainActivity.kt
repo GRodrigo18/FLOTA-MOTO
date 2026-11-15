@@ -130,11 +130,30 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val AUTO_LOCK_MS = 5 * 60 * 1000L
+        const val EXTRA_OPEN_ALERTS = "open_alerts"
+    }
+
+    /**
+     * La notificación fija de recordatorios abre la app con la campana abierta.
+     * Solo se deja pedido: la campana se abre cuando ya se ingresó con el PIN (MainAppScaffold).
+     */
+    private fun handleOpenAlertsIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_ALERTS, false) == true) {
+            intent.removeExtra(EXTRA_OPEN_ALERTS)
+            viewModel.requestOpenAlerts()
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOpenAlertsIntent(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) handleOpenAlertsIntent(intent)
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val syncReady by viewModel.syncReady.collectAsStateWithLifecycle()
@@ -216,6 +235,16 @@ fun MainAppScaffold(
     val visibleTab = if (!state.isAdmin && state.activeTab == 3) 0 else state.activeTab
     var menuOpen by remember { mutableStateOf(false) }
 
+    // Pedidos de abrir la campana (línea de Inicio, "Ver todas" o la notificación fija).
+    // Este Scaffold solo existe tras ingresar con el PIN, así que nunca se salta el bloqueo.
+    val openAlertsRequested by viewModel.openAlertsRequests.collectAsStateWithLifecycle()
+    LaunchedEffect(openAlertsRequested) {
+        if (openAlertsRequested) {
+            viewModel.consumeOpenAlertsRequest()
+            viewModel.openDialog(DialogType.EMERGENT_ALERTS)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -230,6 +259,7 @@ fun MainAppScaffold(
                     )
                 },
                 actions = {
+                    // Todos los recordatorios pendientes, también los quitados de Inicio
                     val urgentCount = state.urgentAlerts.size
                     IconButton(
                         onClick = { viewModel.openDialog(DialogType.EMERGENT_ALERTS) },
@@ -246,7 +276,7 @@ fun MainAppScaffold(
                         ) {
                             Icon(
                                 imageVector = if (urgentCount > 0) Icons.Default.NotificationsActive else Icons.Outlined.Notifications,
-                                contentDescription = "Alertas",
+                                contentDescription = "Recordatorios pendientes",
                                 tint = if (urgentCount > 0) DangerRed else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
