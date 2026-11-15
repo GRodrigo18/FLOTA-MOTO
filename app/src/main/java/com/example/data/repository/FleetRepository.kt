@@ -246,6 +246,62 @@ class FleetRepository(
         result.anulado
     }
 
+    /**
+     * Moto inactiva: se anula TODA su deuda (garantía pendiente y el resto), sin tocar Caja.
+     * Queda en el historial de Deudas como "ANULADO" y se puede deshacer desde ahí.
+     * Devuelve el total anulado.
+     */
+    suspend fun cancelAllDebtForInactive(placa: String): Double = withContext(Dispatchers.IO) {
+        atomicResult {
+            val unit = dao.getUnitByPlaca(placa) ?: return@atomicResult 0.0
+            val total = unit.deudaTotal.coerceAtLeast(0.0)
+            if (total <= 0.0) {
+                if (unit.deudaGarantia != 0.0) dao.updateUnitDebtAndGarantia(unit.placa, 0.0, 0.0)
+                return@atomicResult 0.0
+            }
+            val fecha = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date())
+            val garantia = unit.deudaGarantia.coerceIn(0.0, total)
+            val resto = total - garantia
+            if (garantia > 0.0) {
+                dao.insertDebtRecord(
+                    DebtRecordEntity(
+                        unitPlaca = unit.placa, nombreMoto = unit.nombreMoto, tipo = "ANULADO", monto = garantia,
+                        motivo = "Garantía anulada: moto inactiva (no entra a Caja)", fecha = fecha
+                    )
+                )
+            }
+            if (resto > 0.004) {
+                dao.insertDebtRecord(
+                    DebtRecordEntity(
+                        unitPlaca = unit.placa, nombreMoto = unit.nombreMoto, tipo = "ANULADO", monto = resto,
+                        motivo = "${com.example.util.DebtMath.MOTIVO_DEUDA_ANULADA}: moto inactiva (no entra a Caja)", fecha = fecha
+                    )
+                )
+            }
+            dao.updateUnitDebtAndGarantia(unit.placa, 0.0, 0.0)
+            total
+        }
+    }
+
+    /**
+     * Marca días como "No trabajó" (taller, moto parada, descanso): no se cobran ni entran a Caja,
+     * pero dejan de contar como días sin pagar. No pisa días que ya tienen un pago.
+     */
+    suspend fun markNotWorked(unit: FleetUnitEntity, fechas: List<String>, etiqueta: String = com.example.util.MissedPayments.LABEL_NO_TRABAJO) =
+        withContext(Dispatchers.IO) {
+            atomically {
+                val ya = dao.getPaymentDatesOf(unit.placa).toSet()
+                fechas.filter { it !in ya }.forEach { f ->
+                    dao.insertDailyPayment(
+                        DailyPaymentEntity(
+                            fecha = f, unitPlaca = unit.placa, nombreMoto = unit.nombreMoto,
+                            cuotaMonto = 0.0, pagado = false, hora = etiqueta
+                        )
+                    )
+                }
+            }
+        }
+
     /** Nuevo mes: la revisión técnica de todas las motos vuelve a quedar pendiente. */
     suspend fun resetMonthlyRevision() = withContext(Dispatchers.IO) {
         dao.resetRevisionTecnicaMesTodas()

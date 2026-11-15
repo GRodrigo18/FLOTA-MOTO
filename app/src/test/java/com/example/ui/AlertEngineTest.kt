@@ -53,22 +53,25 @@ class AlertEngineTest {
     }
 
     @Test
-    fun `avisa cobros pendientes solo por la tarde y solo de quien debe cuota`() {
+    fun `dias sin pagar avisan por moto y con las fechas`() {
         val motos = listOf(
-            unit("A"), // sin pagar
-            unit("B"), // sin pagar
+            unit("A"), // debe dos días
+            unit("B"), // al día
             unit("C", cliente = "Sin asignar"), // sin chofer: no debe cuota
             unit("D", estado = "En Taller") // en taller: no debe cuota
         )
-        val pagados = setOf("A")
-
-        val temprano = AlertEngine.build(motos, pagados, null, hourOfDay = 10, now = now)
-        assertTrue(temprano.none { it.id == "cobros_hoy" })
-
-        val tarde = AlertEngine.build(motos, pagados, null, hourOfDay = 18, now = now)
-        val cobros = tarde.first { it.id == "cobros_hoy" }
-        assertEquals("Cobros pendientes hoy: 1", cobros.titulo)
-        assertTrue(cobros.descripcion.contains("Moto B"))
+        val faltas = mapOf(
+            "A" to listOf("2026-10-14", "2026-10-15"),
+            "C" to listOf("2026-10-15"),
+            "D" to listOf("2026-10-15")
+        )
+        val alerts = AlertEngine.build(motos, emptySet(), null, hourOfDay = 18, now = now, missedByPlaca = faltas)
+        assertEquals(listOf("faltas_A"), alerts.map { it.id })
+        val a = alerts.single()
+        assertEquals("No pagó 2 días • Moto A", a.titulo)
+        assertTrue(a.descripcion.contains("mié 14 oct"))
+        assertTrue(a.descripcion.contains("jue 15 oct"))
+        assertEquals("A", a.unitPlaca)
     }
 
     @Test
@@ -112,9 +115,12 @@ class AlertEngineTest {
             unit("A", soatDias = 3, finContrato = "2026-10-16", deuda = 50.0, revisionPendiente = true),
             unit("B")
         )
-        val alerts = AlertEngine.build(motos, emptySet(), stockAceite = 2, hourOfDay = 18, now = now, stockLlantas = 0)
+        val alerts = AlertEngine.build(
+            motos, emptySet(), stockAceite = 2, hourOfDay = 18, now = now, stockLlantas = 0,
+            missedByPlaca = mapOf("B" to listOf("2026-10-15"))
+        )
         assertEquals(
-            setOf("soat_A", "rev_A", "contrato_A", "deuda_A", "cobros_hoy", "stock_llantas", "stock_aceite"),
+            setOf("soat_A", "rev_A", "contrato_A", "deuda_A", "faltas_B", "stock_llantas", "stock_aceite"),
             alerts.map { it.id }.toSet()
         )
     }
@@ -144,8 +150,7 @@ class AlertEngineTest {
         val alerts = AlertEngine.build(
             listOf(unit("A", deuda = 10.0, revisionPendiente = true)), emptySet(), stockAceite = 1, hourOfDay = 18, now = now
         )
-        // "cobros_hoy" lleva la fecha en la clave (ver la prueba de cobros del día)
-        alerts.filter { it.id != "cobros_hoy" }.forEach { assertEquals(it.id, it.hideKey) }
+        alerts.forEach { assertEquals(it.id, it.hideKey) }
     }
 
     @Test
@@ -166,7 +171,7 @@ class AlertEngineTest {
         val alerts = AlertEngine.build(motos, emptySet(), stockAceite = 3, hourOfDay = 18, now = now)
         val ordenados = AlertEngine.sortByUrgency(alerts.shuffled(java.util.Random(7)))
         assertEquals(
-            listOf("soat_C", "contrato_B", "soat_A", "contrato_A", "deuda_A", "rev_A", "cobros_hoy", "stock_aceite"),
+            listOf("soat_C", "contrato_B", "soat_A", "contrato_A", "deuda_A", "rev_A", "stock_aceite"),
             ordenados.map { it.id }
         )
     }
@@ -180,10 +185,11 @@ class AlertEngineTest {
     }
 
     @Test
-    fun `moto inactiva con deuda sigue recordando la deuda (y nada mas)`() {
+    fun `moto inactiva no avisa nada (su deuda se anula al dejarla inactiva)`() {
         val u = unit("A", soatDias = 0, finContrato = "2026-10-01", deuda = 120.0, revisionPendiente = true, estado = "Inactivo")
-        val alerts = AlertEngine.build(listOf(u), emptySet(), null, hourOfDay = 10, now = now)
-        assertEquals(listOf("deuda_A"), alerts.map { it.id })
+        val alerts = AlertEngine.build(listOf(u), emptySet(), null, hourOfDay = 18, now = now,
+            missedByPlaca = mapOf("A" to listOf("2026-10-15")))
+        assertTrue(alerts.isEmpty())
     }
 
     @Test
@@ -199,9 +205,19 @@ class AlertEngineTest {
     }
 
     @Test
-    fun `cobros del dia tienen una clave por dia`() {
-        val hoy = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = now).single { it.id == "cobros_hoy" }
-        val manana = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = at(2026, 10, 16)).single { it.id == "cobros_hoy" }
-        assertTrue(hoy.hideKey != manana.hideKey)
+    fun `un dia nuevo sin pagar cambia la clave y vuelve a Inicio`() {
+        val ayer = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 10, now = now,
+            missedByPlaca = mapOf("A" to listOf("2026-10-14"))).single()
+        val hoy = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = now,
+            missedByPlaca = mapOf("A" to listOf("2026-10-14", "2026-10-15"))).single()
+        assertNotEquals(ayer.hideKey, hoy.hideKey)
+        assertEquals("faltas_A", hoy.id)
+    }
+
+    @Test
+    fun `solo hoy sin pagar dice No pago hoy`() {
+        val a = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = now,
+            missedByPlaca = mapOf("A" to listOf("2026-10-15"))).single()
+        assertEquals("No pagó hoy • Moto A", a.titulo)
     }
 }

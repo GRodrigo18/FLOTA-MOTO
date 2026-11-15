@@ -42,4 +42,11 @@ class DebtMathTest {
         assertEquals(120.0, r.deudaTotal, 0.001)
         assertEquals(100.0, r.deudaGarantia, 0.001)
     }
+
+    @Test
+    fun `deshacer una deuda anulada (no garantia) solo vuelve a la deuda`() {
+        val r = DebtMath.reverse("ANULADO", 80.0, "Deuda anulada: moto inactiva (no entra a Caja)", 0.0, 0.0)
+        assertEquals(80.0, r.deudaTotal, 0.001)
+        assertEquals(0.0, r.deudaGarantia, 0.001)
+    }
 }

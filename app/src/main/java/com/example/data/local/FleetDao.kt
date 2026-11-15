@@ -301,4 +301,8 @@ interface FleetDao {
 
     @Query("SELECT * FROM daily_payments WHERE unitPlaca = :placa AND fecha LIKE :mesPrefix || '%'")
     suspend fun getPaymentsOfMonth(placa: String, mesPrefix: String): List<DailyPaymentEntity>
+
+    /** Días que ya tienen registro (pagado o "No trabajó") de una moto. */
+    @Query("SELECT fecha FROM daily_payments WHERE unitPlaca = :placa")
+    suspend fun getPaymentDatesOf(placa: String): List<String>
 }

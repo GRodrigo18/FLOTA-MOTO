@@ -923,7 +923,7 @@ private fun UnitDetailBottomSheet(
             text = {
                 Text(
                     "La moto quedará Inactiva y sin chofer. Ya no se le cobrará cuota" +
-                        (if (unit.deudaGarantia > 0.0) " y se anulará la garantía pendiente (S/ ${"%.2f".format(unit.deudaGarantia)})." else ".") +
+                        (if (unit.deudaTotal > 0.0) " y se anulará toda su deuda (S/ ${"%.2f".format(unit.deudaTotal)})." else ".") +
                         " El historial se conserva.",
                     fontSize = AppText.Body
                 )

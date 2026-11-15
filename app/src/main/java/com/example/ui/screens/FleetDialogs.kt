@@ -327,6 +327,7 @@ fun FleetDialogHost(
             viewModel.closeDialog()
         }
 
+        DialogType.MISSED_PAYMENTS -> MissedPaymentsDialog(state = state, viewModel = viewModel)
         DialogType.EMERGENT_ALERTS -> {
             EmergentAlertsDialog(
                 state = state,

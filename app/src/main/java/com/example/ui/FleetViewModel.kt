@@ -20,6 +20,8 @@ import com.example.util.AppUser
 import com.example.util.AutoBackup
 import com.example.util.DriverMessages
 import com.example.util.FleetDates
+import com.example.util.MissedPayments
+import com.example.util.MissedPrefs
 import com.example.util.MonthlyReport
 import com.example.util.ShareActions
 import com.example.util.FleetRules
@@ -42,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -71,7 +74,8 @@ enum class DialogType {
     EMERGENT_ALERTS,
     MANAGE_USERS,
     CHANGE_PIN,
-    START_FROM_ZERO
+    START_FROM_ZERO,
+    MISSED_PAYMENTS
 }
 
 private val ISO_DATE = Regex("^\\d{4}-\\d{2}-\\d{2}")
@@ -105,6 +109,9 @@ data class FleetUiState(
     val dataLoaded: Boolean = false,
     /** Cambia cada pocos minutos: así a las 17:00 o a medianoche los recordatorios se recalculan solos. */
     val clockTick: Long = 0L,
+    /** Desde qué día se llevan los días sin pagar, y el día en que se registró cada moto. */
+    val faltasDesde: String = "",
+    val unitAddedDates: Map<String, String> = emptyMap(),
     val userEmail: String = "",
     val userName: String = "Administrador",
     val hasUsedHistory: Boolean = false,
@@ -160,9 +167,10 @@ data class FleetUiState(
     val totalDeudaPendiente: Double = units.sumOf { it.deudaTotal }
 
     // Pagos del día seleccionado
+    // Registros del día elegido: pagos y días marcados "No trabajó" (pagado = false, S/ 0)
     val pagosDelDiaSeleccionado: List<DailyPaymentEntity> = dailyPayments.filter { it.fecha == selectedDate }
-    val conteoPagadosHoy: Int = pagosDelDiaSeleccionado.size
-    val totalCobradoHoy: Double = pagosDelDiaSeleccionado.sumOf { it.cuotaMonto }
+    val conteoPagadosHoy: Int = pagosDelDiaSeleccionado.count { it.pagado }
+    val totalCobradoHoy: Double = pagosDelDiaSeleccionado.filter { it.pagado }.sumOf { it.cuotaMonto }
 
     // Mantenimientos del mes seleccionado
     val mantenimientosDelMes: List<DetailedMaintenanceEntity> = detailedMaintenances.filter { it.mesAno == selectedMonth }
@@ -185,6 +193,25 @@ data class FleetUiState(
     // Recordatorios (las mismas reglas que usa el aviso diario en segundo plano). Son TODOS los
     // activos, de más urgente a menos: solo desaparecen cuando se resuelve el problema.
     // Los usan la campana, su contador y los avisos al celular.
+    /**
+     * Días sin pagar de cada moto que debe cuota (placa → fechas, de la más antigua a la más reciente).
+     * Un día se resuelve pagándolo o marcándolo "No trabajó".
+     */
+    val missedByPlaca: Map<String, List<String>> by lazy {
+        if (!dataLoaded) return@lazy emptyMap()
+        val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        MissedPayments.byPlaca(
+            today = hoy,
+            hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
+            desde = faltasDesde,
+            agregadas = unitAddedDates,
+            units = units.filter {
+                FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
+            }.associate { it.placa to it.inicioContrato },
+            registros = dailyPayments.map { it.unitPlaca to it.fecha }
+        )
+    }
+
     val urgentAlerts: List<UrgentAlert> by lazy {
         val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
         AlertEngine.sortByUrgency(AlertEngine.build(
@@ -198,10 +225,12 @@ data class FleetUiState(
                     soatFin = u.soatFin,
                     revisionPendiente = !u.revisionTecnicaMesRealizada,
                     finContrato = u.finContrato,
-                    deuda = u.deudaTotal
+                    deuda = u.deudaTotal,
+                    cuota = u.cuotaDiaria
                 )
             },
             paidTodayPlacas = dailyPayments.filter { it.fecha == hoy && it.pagado }.map { it.unitPlaca }.toSet(),
+            missedByPlaca = missedByPlaca,
             stockAceite = if (inventory.isNotEmpty()) stockAceiteBotellas else null,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llantaItem?.stock,
@@ -234,6 +263,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _messageSnackbar = MutableStateFlow<String?>(null)
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
     private val _homeHiddenKeys = MutableStateFlow(AlertMemory.homeHidden(prefs))
+
+    /** (desde cuándo se llevan las faltas, día en que se registró cada moto) */
+    private val _missedConfig = MutableStateFlow((MissedPrefs.desde(prefs) ?: "") to MissedPrefs.agregadas(prefs))
+
+    private fun refreshMissedConfig() {
+        _missedConfig.value = (MissedPrefs.desde(prefs) ?: "") to MissedPrefs.agregadas(prefs)
+    }
 
     /** true = alguien pidió abrir la campana (aviso tocado, línea de Inicio...). Ver [consumeOpenAlertsRequest]. */
     private val _openAlertsRequests = MutableStateFlow(false)
@@ -449,7 +485,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             userRoleLabel = currentUser?.role?.label ?: "Administrador",
             users = allUsers
         )
-    }.combine(clockTicker) { st, tick -> st.copy(clockTick = tick) }.stateIn(
+    }.combine(clockTicker) { st, tick -> st.copy(clockTick = tick) }
+        .combine(_missedConfig) { st, cfg -> st.copy(faltasDesde = cfg.first, unitAddedDates = cfg.second) }
+        .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = FleetUiState()
@@ -462,6 +500,26 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     //  3) Guardar el respaldo en la carpeta de sincronización tras cada cambio de datos.
     @OptIn(FlowPreview::class)
     private fun startAutomaticWork() {
+        // Días sin pagar: se empiezan a llevar desde el primer cobro registrado en la app (o desde hoy),
+        // para no inventar faltas de cuando todavía no se usaba.
+        viewModelScope.launch {
+            val st = uiState.first { it.dataLoaded }
+            if (MissedPrefs.desde(prefs) == null) {
+                val primero = st.dailyPayments.filter { it.pagado }.minOfOrNull { it.fecha }
+                    ?.let { FleetDates.normalize(it) }
+                MissedPrefs.setDesde(prefs, primero ?: FleetDates.today())
+                refreshMissedConfig()
+            }
+        }
+        // Moto parada (taller o inactiva): al volver a trabajar, esos días quedan como "No trabajó"
+        // solos, para que no salgan como días sin pagar.
+        viewModelScope.launch {
+            uiState
+                .filter { it.dataLoaded }
+                .map { st -> st.units.associate { it.placa to it.estado } }
+                .distinctUntilChanged()
+                .collect { estados -> trackStoppedUnits(estados) }
+        }
         viewModelScope.launch {
             uiState
                 .filter { it.dataLoaded }
@@ -493,6 +551,51 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 .drop(1) // el estado inicial vacío, antes de leer la base de datos
                 .debounce(15_000) // espera a que terminen de registrar varias cosas seguidas
                 .collect { autoBackupToFolder() }
+        }
+    }
+
+    private suspend fun trackStoppedUnits(estados: Map<String, String>) {
+        val hoy = FleetDates.today()
+        val paradas = MissedPrefs.paradas(prefs).filterKeys { it in estados }.toMutableMap()
+        var cambio = paradas.size != MissedPrefs.paradas(prefs).size
+        estados.forEach { (placa, estado) ->
+            val parada = estado == "En Taller" || estado == "Inactivo"
+            val desde = paradas[placa]
+            if (parada && desde == null) {
+                paradas[placa] = hoy
+                cambio = true
+            } else if (!parada && desde != null) {
+                paradas.remove(placa)
+                cambio = true
+                // Del día en que paró hasta ayer: "No trabajó" (hoy ya puede pagar)
+                val ayer = FleetDates.plus(hoy, days = -1)
+                val unit = uiState.value.units.firstOrNull { it.placa == placa }
+                if (unit != null && ayer != null) {
+                    val ya = uiState.value.dailyPayments.filter { it.unitPlaca == placa }.map { it.fecha }.toSet()
+                    val dias = MissedPayments.daysToExcuse(desde, ayer, ya)
+                    if (dias.isNotEmpty()) repository.markNotWorked(unit, dias, if (estado == "Inactivo") "Inactiva" else "En taller")
+                }
+            }
+        }
+        if (cambio) MissedPrefs.setParadas(prefs, paradas)
+    }
+
+    // --- Días sin pagar: se resuelven desde el aviso de la moto ---
+
+    /** El chofer sí pagó ese día (se registra la cuota con su fecha y entra a Caja). */
+    fun payMissedDay(unit: FleetUnitEntity, fecha: String) {
+        viewModelScope.launch {
+            val fresh = uiState.value.units.firstOrNull { it.id == unit.id } ?: unit
+            repository.toggleDailyPayment(fresh, fecha, true)
+            showSnackbar("Cuota del ${MissedPayments.label(fecha)} registrada para ${fresh.nombreMoto}.")
+        }
+    }
+
+    /** Ese día la moto no trabajó (no se cobra y deja de contar como día sin pagar). */
+    fun markDayNotWorked(unit: FleetUnitEntity, fecha: String) {
+        viewModelScope.launch {
+            repository.markNotWorked(unit, listOf(fecha))
+            showSnackbar("${MissedPayments.label(fecha)}: ${unit.nombreMoto} no trabajó (no se cobra).")
         }
     }
 
@@ -914,6 +1017,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 cancelUniqueWork(com.example.util.BackupScheduler.WORK_EVENING)
             }
             prefs.edit().clear().commit()
+            MissedPrefs.setDesde(prefs, FleetDates.today()) // empezar de cero: las faltas se cuentan desde hoy
+            refreshMissedConfig()
             _users.value = emptyList()
             _userEmail.value = ""
             _userName.value = "Administrador"
@@ -1033,6 +1138,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             repository.clearAllData()
             _homeHiddenKeys.value = emptySet()
             AlertMemory.saveHomeHidden(prefs, emptySet())
+            MissedPrefs.clear(prefs)
+            MissedPrefs.setDesde(prefs, FleetDates.today()) // se empieza a contar desde hoy
+            refreshMissedConfig()
             _messageSnackbar.value = "Base de datos restaurada correctamente."
         }
     }
@@ -1188,12 +1296,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             val date = _selectedDate.value
             // Solo las motos que trabajan pagan cuota: inactivas y en taller no se marcan como pagadas.
             // Las que ya pagaron ese día no se tocan (se respeta el monto que se cobró de verdad).
-            val yaPagaron = uiState.value.dailyPayments
-                .filter { it.fecha == date && it.pagado }
-                .map { it.unitPlaca }
-                .toSet()
+            val registrosDelDia = uiState.value.dailyPayments.filter { it.fecha == date }
+            val yaPagaron = registrosDelDia.filter { it.pagado }.map { it.unitPlaca }.toSet()
+            // Tampoco se cobra a las motos marcadas "No trabajó" ese día
+            val conRegistro = registrosDelDia.map { it.unitPlaca }.toSet()
             val currentUnits = uiState.value.units.filter {
-                if (paid) FleetRules.debeCuota(it.estado) && it.placa !in yaPagaron else it.placa in yaPagaron
+                if (paid) FleetRules.debeCuota(it.estado) && it.placa !in conRegistro else it.placa in yaPagaron
             }
             currentUnits.forEach { unit ->
                 repository.toggleDailyPayment(unit, date, paid)
@@ -1418,14 +1526,16 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             // Nombre o placa nuevos: se arrastran a todo el historial de la moto
             if (nombreFinal != fresh.nombreMoto || placaFinal != fresh.placa) {
                 repository.renameUnit(fresh.placa, nombreFinal, placaFinal)
+                MissedPrefs.rename(prefs, fresh.placa, placaFinal)
+                refreshMissedConfig()
             }
-            // Pasó a Inactivo: la garantía pendiente deja de ser deuda
+            // Pasó a Inactivo: TODA su deuda se anula (garantía y lo demás; queda en el historial)
             val anulado = if (estadoActualizado == "Inactivo" && fresh.estado != "Inactivo") {
-                repository.cancelPendingGuarantee(placaFinal)
+                repository.cancelAllDebtForInactive(placaFinal)
             } else 0.0
             _selectedUnit.value = updatedUnit.copy(nombreMoto = nombreFinal, placa = placaFinal)
             showSnackbar(
-                if (anulado > 0.0) "$nombreFinal inactiva. Garantía pendiente anulada (S/ ${"%.2f".format(anulado)})."
+                if (anulado > 0.0) "$nombreFinal inactiva. Su deuda de S/ ${"%.2f".format(anulado)} se anuló (queda en el historial)."
                 else "Datos de $nombreFinal ($placaFinal) actualizados."
             )
             closeDialog()
@@ -1550,6 +1660,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 observaciones = observaciones
             )
             repository.insertUnit(newUnit)
+            // Día en que se registró: antes de eso no hay días sin pagar que avisar
+            MissedPrefs.setAgregada(prefs, newUnit.placa, FleetDates.today())
+            refreshMissedConfig()
 
             // Si dejó garantía inicial en efectivo/transferencia, entra a Caja Disponible
             if (garantiaInicial > 0.0) {
@@ -1735,6 +1848,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: Exception) {
             }
             repository.deleteUnitCompletely(unit.placa)
+            MissedPrefs.remove(prefs, unit.placa)
+            refreshMissedConfig()
             _selectedUnit.value = null
             _activeDialog.value = null
             showSnackbar("${unit.nombreMoto} (${unit.placa}) eliminada.")
@@ -1758,13 +1873,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             val fresh = uiState.value.units.firstOrNull { it.id == unit.id } ?: unit
             val updated = fresh.copy(cliente = "Sin asignar", telefono = "", estado = "Inactivo")
             repository.updateUnit(updated)
-            val anulado = repository.cancelPendingGuarantee(updated.placa)
-            _selectedUnit.value = updated.copy(
-                deudaGarantia = 0.0,
-                deudaTotal = (updated.deudaTotal - anulado).coerceAtLeast(0.0)
-            )
+            val anulado = repository.cancelAllDebtForInactive(updated.placa)
+            _selectedUnit.value = updated.copy(deudaGarantia = 0.0, deudaTotal = 0.0)
             showSnackbar(
-                if (anulado > 0.0) "Contrato finalizado. Garantía pendiente anulada (S/ ${"%.2f".format(anulado)})."
+                if (anulado > 0.0) "Contrato finalizado. Su deuda de S/ ${"%.2f".format(anulado)} se anuló (queda en el historial)."
                 else "Contrato finalizado para ${unit.nombreMoto}."
             )
         }
@@ -1870,9 +1982,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         val fresh = uiState.value.units.firstOrNull { it.id == unit.id } ?: unit
         val hoy = FleetDates.today()
         val mes = hoy.substring(0, 7)
-        val pagos = repository.paymentsOfMonth(fresh.placa, mes)
+        val registros = repository.paymentsOfMonth(fresh.placa, mes)
+        val pagos = registros.filter { it.pagado } // los días "No trabajó" no son pagos
         val sinPago = if (FleetRules.debeCuota(fresh.estado)) {
-            DriverMessages.unpaidDays(mes, hoy, fresh.inicioContrato, pagos.map { it.fecha }.toSet())
+            DriverMessages.unpaidDays(mes, hoy, fresh.inicioContrato, registros.map { it.fecha }.toSet())
         } else 0
         return DriverMessages.statement(
             DriverMessages.Statement(
@@ -1911,7 +2024,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         if (!requireAdmin()) return
         viewModelScope.launch {
             val st = uiState.value
-            val pagosMes = st.dailyPayments.filter { it.fecha.startsWith(mes) }
+            val pagosMes = st.dailyPayments.filter { it.fecha.startsWith(mes) && it.pagado }
             val tallerMes = st.detailedMaintenances.filter { it.mesAno == mes }
             val movMes = st.movements.filter { it.fecha.startsWith(mes) }
             val unitRows = st.units.map { u ->
@@ -1956,7 +2069,7 @@ data class Tuple7<A, B, C, D, E, F, G>(val v1: A, val v2: B, val v3: C, val v4: 
  * 14 = v1.4, 15 = v1.5); en modo novedades se muestran los pasos con since > versión vista.
  */
 object TourNews {
-    const val CURRENT_VERSION = 15
+    const val CURRENT_VERSION = 16
     const val KEY_SEEN_VERSION = "tour_news_seen_version"
     const val KEY_TOUR_DONE = "has_completed_interactive_tour_v2"
     const val OLD_KEY_V14_SEEN = "tour_news_v14_seen"

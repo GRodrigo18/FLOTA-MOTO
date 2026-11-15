@@ -72,6 +72,19 @@ class DailyJobWorker(
             it.categoria == "Neumáticos" || it.nombre.contains("Llanta", ignoreCase = true) || it.nombre.contains("Neumático", ignoreCase = true)
         }
 
+        // Días sin pagar de cada moto (mismo cálculo que la app)
+        val hora = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val missed = MissedPayments.byPlaca(
+            today = hoy,
+            hourOfDay = hora,
+            desde = MissedPrefs.desde(prefs) ?: hoy,
+            agregadas = MissedPrefs.agregadas(prefs),
+            units = units.filter {
+                FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
+            }.associate { it.placa to it.inicioContrato },
+            registros = payments.map { it.unitPlaca to it.fecha }
+        )
+
         val alerts = AlertEngine.sortByUrgency(AlertEngine.build(
             units = units.map { u ->
                 AlertUnit(
@@ -83,14 +96,16 @@ class DailyJobWorker(
                     soatFin = u.soatFin,
                     revisionPendiente = !u.revisionTecnicaMesRealizada,
                     finContrato = u.finContrato,
-                    deuda = u.deudaTotal
+                    deuda = u.deudaTotal,
+                    cuota = u.cuotaDiaria
                 )
             },
             paidTodayPlacas = payments.filter { it.fecha == hoy && it.pagado }.map { it.unitPlaca }.toSet(),
             stockAceite = if (inventory.isNotEmpty()) (aceite?.stock ?: 0) else null,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llanta?.stock,
-            minimoLlantas = llanta?.stockMinimo?.coerceAtLeast(1) ?: AlertEngine.STOCK_LLANTAS_MINIMO
+            minimoLlantas = llanta?.stockMinimo?.coerceAtLeast(1) ?: AlertEngine.STOCK_LLANTAS_MINIMO,
+            missedByPlaca = missed
         ))
 
         // Resumen fijo de recordatorios pendientes (todos, también los ocultos en Inicio)

@@ -37,7 +37,8 @@ data class AlertUnit(
     val soatFin: String,
     val revisionPendiente: Boolean,
     val finContrato: String,
-    val deuda: Double
+    val deuda: Double,
+    val cuota: Double = 0.0
 )
 
 /**
@@ -56,6 +57,9 @@ object AlertEngine {
     const val STAGE_VENCIDO = "vencido"
     const val STAGE_PRONTO = "pronto"
 
+    /** Prefijo del recordatorio "días sin pagar" de cada moto. */
+    const val FALTAS_PREFIX = "faltas_"
+
     /** Clave de ocultar: el id solo, o "id#etapa" si la alerta tiene etapas (SOAT y contrato). */
     fun hideKeyFor(id: String, stage: String = ""): String =
         if (stage.isBlank()) id else "$id$STAGE_SEPARATOR$stage"
@@ -70,6 +74,7 @@ object AlertEngine {
     private fun urgencyRank(a: UrgentAlert): Int = when {
         a.tipo == AlertType.SOAT -> 0
         a.tipo == AlertType.CONTRATO -> 1
+        a.id.startsWith(FALTAS_PREFIX) -> 2 // días sin pagar de cada moto
         a.tipo == AlertType.DEUDA && a.unitPlaca != null -> 2
         a.tipo == AlertType.REVISION -> 3
         a.tipo == AlertType.DEUDA -> 4 // cobros_hoy (sin moto)
@@ -89,7 +94,9 @@ object AlertEngine {
         dismissed: Set<String> = emptySet(),
         now: Long = System.currentTimeMillis(),
         stockLlantas: Int? = null,
-        minimoLlantas: Int = STOCK_LLANTAS_MINIMO
+        minimoLlantas: Int = STOCK_LLANTAS_MINIMO,
+        /** Días sin pago de cada moto (ver MissedPayments); la clave es la placa. */
+        missedByPlaca: Map<String, List<String>> = emptyMap()
     ): List<UrgentAlert> = buildList {
         // [dismissed] se mantiene por compatibilidad (acepta id o hideKey); la app ya no lo usa:
         // los recordatorios solo desaparecen cuando se resuelven.
@@ -98,10 +105,9 @@ object AlertEngine {
         }
 
         units.forEach { u ->
-            // Una moto inactiva ya no tiene SOAT, revisión ni contrato que avisar,
-            // pero si el chofer quedó debiendo, la deuda sigue pendiente hasta que se pague.
-            val activa = u.estado != "Inactivo"
-            if (activa) {
+            // Una moto inactiva no avisa nada: al dejarla inactiva su deuda se anula (queda en el historial).
+            if (u.estado == "Inactivo") return@forEach
+            run {
 
                 // Días reales hasta el vencimiento (negativo = ya venció). El último día válido NO es "vencido".
                 // soatDias viene recortado a 0 (hoy y vencido valen 0): se mira la fecha para distinguirlos.
@@ -177,25 +183,29 @@ object AlertEngine {
             }
         }
 
-        // Cuotas del día sin cobrar (solo a partir de la tarde, para no avisar cuando aún es temprano)
-        if (hourOfDay >= HORA_COBROS) {
-            val sinPagar = units.filter { debeCuotaDiaria(it) && it.placa !in paidTodayPlacas }
-            if (sinPagar.isNotEmpty()) {
-                val nombres = sinPagar.take(5).joinToString(", ") { it.nombre }
-                val resto = sinPagar.size - 5
-                addIfNew(
-                    UrgentAlert(
-                        id = "cobros_hoy",
-                        tipo = AlertType.DEUDA,
-                        titulo = "Cobros pendientes hoy: ${sinPagar.size}",
-                        descripcion = "Aún no pagan la cuota: $nombres" + if (resto > 0) " y $resto más." else ".",
-                        unitPlaca = null,
-                        hora = "Hoy",
-                        // Clave por día: si se quitó de Inicio hoy, mañana vuelve a aparecer
-                        hideKey = hideKeyFor("cobros_hoy", FleetDates.today(now))
-                    )
+        // Días sin pagar, POR MOTO y con las fechas (hoy cuenta desde las 17:00).
+        // Se quita solo cuando cada día queda pagado o marcado "No trabajó".
+        units.forEach { u ->
+            if (!debeCuotaDiaria(u)) return@forEach
+            val faltas = missedByPlaca[u.placa].orEmpty()
+            if (faltas.isEmpty()) return@forEach
+            val hoy = FleetDates.today(now)
+            val soloHoy = faltas.size == 1 && faltas[0] == hoy
+            val monto = if (u.cuota > 0.0) " • S/ ${"%.2f".format(u.cuota * faltas.size)}" else ""
+            addIfNew(
+                UrgentAlert(
+                    id = "$FALTAS_PREFIX${u.placa}",
+                    tipo = AlertType.DEUDA,
+                    titulo = if (soloHoy) "No pagó hoy • ${u.nombre}"
+                    else "No pagó ${faltas.size} día${if (faltas.size == 1) "" else "s"} • ${u.nombre}",
+                    descripcion = "Sin pago: ${com.example.util.MissedPayments.summary(faltas)}$monto. " +
+                        "Toca para marcar «Pagó» o «No trabajó».",
+                    unitPlaca = u.placa,
+                    hora = if (soloHoy) "Hoy" else "${faltas.size} día${if (faltas.size == 1) "" else "s"}",
+                    // Si se suma un día nuevo sin pago, la clave cambia y vuelve a verse en Inicio
+                    hideKey = hideKeyFor("$FALTAS_PREFIX${u.placa}", faltas.last())
                 )
-            }
+            )
         }
 
         if (stockLlantas != null && stockLlantas <= minimoLlantas) {

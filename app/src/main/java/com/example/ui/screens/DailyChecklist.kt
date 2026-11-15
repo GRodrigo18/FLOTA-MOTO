@@ -402,7 +402,9 @@ internal fun DailyChecklistTabContent(
         } else {
             items(motosCobro, key = { "unit_chk_${it.id}" }) { unit ->
                 val payment = state.pagosDelDiaSeleccionado.firstOrNull { it.unitPlaca == unit.placa }
-                val isPaid = payment != null
+                // Un registro con pagado = false es un día "No trabajó" (no se cobra)
+                val isPaid = payment?.pagado == true
+                val notWorked = payment != null && !payment.pagado
 
                 DailyChecklistUnitCard(
                     unit = unit,
@@ -411,6 +413,10 @@ internal fun DailyChecklistTabContent(
                     isPaid = isPaid,
                     paidTime = payment?.hora,
                     paidAmount = payment?.cuotaMonto,
+                    notWorked = notWorked,
+                    notWorkedLabel = payment?.hora,
+                    missedDays = state.missedByPlaca[unit.placa]?.size ?: 0,
+                    onMissedClick = { viewModel.openDialogFromAlert(DialogType.MISSED_PAYMENTS, unit) },
                     onToggle = { newPaidState ->
                         viewModel.toggleDailyPayment(unit, newPaidState)
                     },
@@ -546,7 +552,11 @@ internal fun DailyChecklistUnitCard(
     onCardClick: () -> Unit,
     onEditCuota: () -> Unit = {},
     onAbonarDeuda: () -> Unit = {},
-    paidAmount: Double? = null
+    paidAmount: Double? = null,
+    notWorked: Boolean = false,
+    notWorkedLabel: String? = null,
+    missedDays: Int = 0,
+    onMissedClick: () -> Unit = {}
 ) {
     val noPaga = !FleetRules.debeCuota(unit.estado)
     Card(
@@ -641,6 +651,23 @@ internal fun DailyChecklistUnitCard(
                     maxLines = 1
                 )
 
+                // Días sin pagar (de días anteriores o de hoy desde las 17:00): tocar para resolverlos
+                if (missedDays > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        onClick = onMissedClick,
+                        shape = RoundedCornerShape(4.dp),
+                        color = DangerRedBg,
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, DangerRedText.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "Sin pagar: $missedDays día${if (missedDays == 1) "" else "s"} › ver",
+                            style = MaterialTheme.typography.labelSmall.copy(color = DangerRedText, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
                 if (unit.deudaTotal > 0.0) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
@@ -722,21 +749,22 @@ internal fun DailyChecklistUnitCard(
                 // Insignia de estado: PAGADO / PENDIENTE / EN TALLER
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = when { isPaid -> SuccessGreenBg; noPaga -> MaterialTheme.colorScheme.surfaceVariant; else -> DangerRedBg },
+                    color = when { isPaid -> SuccessGreenBg; noPaga || notWorked -> MaterialTheme.colorScheme.surfaceVariant; else -> DangerRedBg },
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
-                        when { isPaid -> SuccessGreenText.copy(alpha = 0.3f); noPaga -> MaterialTheme.colorScheme.outline.copy(alpha = 0.3f); else -> DangerRedText.copy(alpha = 0.3f) }
+                        when { isPaid -> SuccessGreenText.copy(alpha = 0.3f); noPaga || notWorked -> MaterialTheme.colorScheme.outline.copy(alpha = 0.3f); else -> DangerRedText.copy(alpha = 0.3f) }
                     )
                 ) {
                     Text(
                         text = when {
                             isPaid -> paidTime ?: "PAGADO"
+                            notWorked -> (notWorkedLabel ?: "No trabajó").uppercase()
                             noPaga -> "EN TALLER"
                             else -> "PENDIENTE"
                         },
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.ExtraBold,
-                            color = when { isPaid -> SuccessGreenText; noPaga -> MaterialTheme.colorScheme.onSurfaceVariant; else -> DangerRedText }
+                            color = when { isPaid -> SuccessGreenText; noPaga || notWorked -> MaterialTheme.colorScheme.onSurfaceVariant; else -> DangerRedText }
                         ),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )

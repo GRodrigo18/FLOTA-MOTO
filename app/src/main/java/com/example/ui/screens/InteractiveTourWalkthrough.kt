@@ -113,6 +113,7 @@ internal val ALL_TOUR_STEPS = listOf(
     TourStep(3, "", "En «Historial», toca un movimiento para ver el detalle o anularlo", adminOnly = true, since = 14),
     TourStep(0, "", "¿Mucho en Inicio? Quítalo con el ojo: sigue en la campana", since = 15),
     TourStep(null, "bell", "Los recordatorios quedan aquí hasta que los resuelvas", since = 15),
+    TourStep(1, "pay_check_first", "Si un chofer no paga, la moto dice «Sin pagar: N días». Tócalo para marcar «Pagó» o «No trabajó»", since = 16),
     TourStep(null, "menu", "Usuarios, copias y más")
 )
 

@@ -78,8 +78,13 @@ fun openAlertTarget(alert: UrgentAlert, state: FleetUiState, viewModel: FleetVie
         }
         AlertType.SOAT, AlertType.REVISION ->
             if (unit != null) viewModel.openDialogFromAlert(DialogType.EDIT_CONTRACT_SOAT, unit) else viewModel.onTabSelected(2)
-        AlertType.DEUDA ->
-            if (unit != null) viewModel.openDialogFromAlert(DialogType.ADD_DEBT_ABONO, unit) else viewModel.onTabSelected(1)
+        AlertType.DEUDA -> when {
+            // Días sin pagar de una moto: lista de días con «Pagó» / «No trabajó»
+            unit != null && alert.id.startsWith(com.example.ui.AlertEngine.FALTAS_PREFIX) ->
+                viewModel.openDialogFromAlert(DialogType.MISSED_PAYMENTS, unit)
+            unit != null -> viewModel.openDialogFromAlert(DialogType.ADD_DEBT_ABONO, unit)
+            else -> viewModel.onTabSelected(1)
+        }
         AlertType.STOCK -> viewModel.onTabSelected(4)
     }
 }

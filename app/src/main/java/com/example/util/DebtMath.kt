@@ -7,6 +7,9 @@ object DebtMath {
 
     data class Saldo(val deudaTotal: Double, val deudaGarantia: Double)
 
+    /** Inicio del motivo de una deuda (no garantía) anulada al dejar la moto inactiva. */
+    const val MOTIVO_DEUDA_ANULADA = "Deuda anulada"
+
     private fun r2(v: Double) = Math.round(v * 100.0) / 100.0
 
     /** Lo que falta para completar la cuota (0 si pagó completo o de más). */
@@ -29,7 +32,9 @@ object DebtMath {
                 )
             }
             "ABONO" -> Saldo(r2(deudaTotal + m), deudaGarantia)
-            "ANULADO" -> Saldo(r2(deudaTotal + m), r2(deudaGarantia + m))
+            // Deshacer: si lo anulado era garantía, vuelve a ser garantía; si era otra deuda, solo la deuda
+            "ANULADO" -> if (motivo.startsWith(MOTIVO_DEUDA_ANULADA, ignoreCase = true)) Saldo(r2(deudaTotal + m), deudaGarantia)
+            else Saldo(r2(deudaTotal + m), r2(deudaGarantia + m))
             else -> Saldo(deudaTotal, deudaGarantia)
         }
     }

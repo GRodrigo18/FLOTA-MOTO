@@ -481,8 +481,8 @@ fun EditContractSoatDialog(
                 }
                 if (estadoSeleccionado == "Inactivo" && unit.estado != "Inactivo") {
                     Text(
-                        text = if (unit.deudaGarantia > 0.0) {
-                            "Inactiva no paga cuota ni garantía. Se anula la garantía pendiente (S/ ${"%.2f".format(unit.deudaGarantia)})."
+                        text = if (unit.deudaTotal > 0.0) {
+                            "Inactiva no paga cuota ni garantía. Se anula toda su deuda (S/ ${"%.2f".format(unit.deudaTotal)}); queda en el historial de Deudas."
                         } else {
                             "Inactiva no paga cuota ni garantía."
                         },
