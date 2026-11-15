@@ -112,7 +112,6 @@ internal val ALL_TOUR_STEPS = listOf(
     TourStep(3, "caja_report", "Envía el reporte del mes para Excel", adminOnly = true, since = 14),
     TourStep(3, "", "En «Historial», toca un movimiento para ver el detalle o anularlo", adminOnly = true, since = 14),
     TourStep(0, "", "¿Mucho en Inicio? Quítalo con el ojo: sigue en la campana", since = 15),
-    TourStep(null, "bell", "Aquí llegan los avisos"),
     TourStep(null, "bell", "Los recordatorios quedan aquí hasta que los resuelvas", since = 15),
     TourStep(null, "menu", "Usuarios, copias y más")
 )
