@@ -320,47 +320,50 @@ class FleetRepository(
     }
 
     suspend fun toggleDailyPayment(unit: FleetUnitEntity, fecha: String, isPagado: Boolean, customMonto: Double? = null) = withContext(Dispatchers.IO) {
-        val montoCobrado = customMonto ?: unit.cuotaDiaria
-        if (isPagado) {
-            val nowTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-            // Primero eliminar registro previo para evitar duplicados en la misma moto y fecha
-            dao.deleteDailyPayment(fecha, unit.placa)
-            dao.deleteDailyPaymentMovement(unit.placa, fecha)
+        // En una sola operación: un doble toque no deja dos pagos ni dos ingresos en Caja
+        atomically {
+            val montoCobrado = customMonto ?: unit.cuotaDiaria
+            if (isPagado) {
+                val nowTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                // Primero eliminar registro previo para evitar duplicados en la misma moto y fecha
+                dao.deleteDailyPayment(fecha, unit.placa)
+                dao.deleteDailyPaymentMovement(unit.placa, fecha)
 
-            dao.insertDailyPayment(
-                DailyPaymentEntity(
-                    fecha = fecha,
-                    unitPlaca = unit.placa,
-                    nombreMoto = unit.nombreMoto,
-                    cuotaMonto = montoCobrado,
-                    pagado = true,
-                    hora = nowTime
+                dao.insertDailyPayment(
+                    DailyPaymentEntity(
+                        fecha = fecha,
+                        unitPlaca = unit.placa,
+                        nombreMoto = unit.nombreMoto,
+                        cuotaMonto = montoCobrado,
+                        pagado = true,
+                        hora = nowTime
+                    )
                 )
-            )
-            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-            val esAdelantado = fecha > todayStr
-            val conceptoMov = if (esAdelantado) {
-                "Pago adelantado ($fecha) - ${unit.nombreMoto} (${unit.placa})"
+                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val esAdelantado = fecha > todayStr
+                val conceptoMov = if (esAdelantado) {
+                    "Pago adelantado ($fecha) - ${unit.nombreMoto} (${unit.placa})"
+                } else {
+                    "Cuota ($fecha) - ${unit.nombreMoto} (${unit.placa})"
+                }
+                val categoriaMov = if (esAdelantado) "Pago Adelantado" else "Pago Diario"
+
+                // Se registra el movimiento con la fecha correspondiente al cobro para que pagos adelantados salgan con su fecha real
+                dao.insertMovement(
+                    FinanceMovementEntity(
+                        concepto = conceptoMov,
+                        monto = montoCobrado,
+                        esIngreso = true,
+                        categoria = categoriaMov,
+                        fecha = fecha,
+                        unitPlaca = unit.placa
+                    )
+                )
             } else {
-                "Cuota ($fecha) - ${unit.nombreMoto} (${unit.placa})"
+                // Al desmarcar, borrar el pago diario Y borrar el movimiento financiero correspondiente para NO generar historial falso
+                dao.deleteDailyPayment(fecha, unit.placa)
+                dao.deleteDailyPaymentMovement(unit.placa, fecha)
             }
-            val categoriaMov = if (esAdelantado) "Pago Adelantado" else "Pago Diario"
-
-            // Se registra el movimiento con la fecha correspondiente al cobro para que pagos adelantados salgan con su fecha real
-            dao.insertMovement(
-                FinanceMovementEntity(
-                    concepto = conceptoMov,
-                    monto = montoCobrado,
-                    esIngreso = true,
-                    categoria = categoriaMov,
-                    fecha = fecha,
-                    unitPlaca = unit.placa
-                )
-            )
-        } else {
-            // Al desmarcar, borrar el pago diario Y borrar el movimiento financiero correspondiente para NO generar historial falso
-            dao.deleteDailyPayment(fecha, unit.placa)
-            dao.deleteDailyPaymentMovement(unit.placa, fecha)
         }
     }
 

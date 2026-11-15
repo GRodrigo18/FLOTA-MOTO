@@ -75,13 +75,13 @@ class DailyJobWorker(
         // Días sin pagar de cada moto (mismo cálculo que la app)
         val hora = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val missed = MissedPayments.byPlaca(
-            today = hoy,
+            today = FleetDates.today(),
             hourOfDay = hora,
-            desde = MissedPrefs.desde(prefs) ?: hoy,
+            desde = MissedPrefs.desde(prefs) ?: FleetDates.today(),
             agregadas = MissedPrefs.agregadas(prefs),
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
-            }.associate { it.placa to it.inicioContrato },
+            }.associate { it.placa to "" }, // igual que la app: no se usa el inicio del contrato
             registros = payments.map { it.unitPlaca to it.fecha }
         )
 

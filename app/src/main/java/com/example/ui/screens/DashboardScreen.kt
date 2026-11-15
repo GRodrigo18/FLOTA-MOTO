@@ -75,11 +75,14 @@ fun DashboardScreen(
     val alerts = state.homeAlerts
     val hiddenCount = (state.urgentAlerts.size - alerts.size).coerceAtLeast(0)
     // Siempre HOY (antes dependía de la fecha elegida en la pestaña Pagos)
-    val hoy = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+    val hoy = com.example.util.FleetDates.today()
     val pagosHoy = state.dailyPayments.filter { it.fecha == hoy && it.pagado }
+    // Las motos marcadas "No trabajó" hoy no cuentan como cobrables
+    val noTrabajaronHoy = state.dailyPayments.filter { it.fecha == hoy && !it.pagado }.map { it.unitPlaca }.toSet()
     // Mismo criterio que el cobro diario y las alertas: trabajando y con chofer asignado
     val cobrables = state.units.count {
-        com.example.util.FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
+        com.example.util.FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() &&
+            !it.cliente.equals("Sin asignar", ignoreCase = true) && it.placa !in noTrabajaronHoy
     }
     val maxVisibleAlerts = 3
 

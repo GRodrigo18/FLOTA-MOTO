@@ -96,7 +96,10 @@ el ingreso se bloquea 30 segundos.
 - **Aviso de días sin pagar, por moto y con las fechas**: cada moto que debe cuota y no pagó tiene su propio recordatorio, por ejemplo "No pagó 2 días • Moto 3 — Sin pagar: jue 12 nov, vie 13 nov • S/ 70.00". El día de hoy cuenta desde las 17:00. Reemplaza al antiguo "Cobros pendientes hoy".
 - **Se resuelve día por día**: al tocar el aviso (o "Sin pagar: N días" en el cobro diario) se abre la lista de días con dos botones: **Pagó** (registra la cuota con esa fecha y entra a Caja) o **No trabajó** (no se cobra). Cuando ya no queda ningún día, el aviso se quita solo.
 - **Taller y moto inactiva no cuentan**: los días que la moto estuvo en el taller o inactiva se marcan solos como "No trabajó" cuando vuelve a trabajar.
-- **No se inventan faltas viejas**: los días sin pagar se cuentan desde el primer cobro registrado en la app (o desde que se instaló esta versión), desde el inicio del contrato y desde que se registró la moto; como máximo los últimos 60 días.
+- **No se inventan faltas viejas**: los días sin pagar se cuentan desde el día en que se instala esta versión (antes no se anotaban los días de taller ni de descanso) y desde que se registró cada moto; como máximo los últimos 60 días. Al recuperar una copia de seguridad también se empieza a contar desde ese día.
+- **Sin chofer tampoco cuenta**: los días en que la moto no tuvo chofer quedan como "No trabajó" al asignarle uno.
+- **Al quedar inactiva** también se anulan sus días sin pagar (no vuelven a aparecer si se reactiva).
+- **Probado**: 137 pruebas automáticas (incluidas 42 de un revisor independiente: renovaciones, paradas largas, cambios de hora, fin de año, 29 de febrero, copias de seguridad).
 - **Moto inactiva = sin deudas**: al dejar una moto Inactiva (o finalizar su contrato) se anula **toda** su deuda, garantía incluida. No entra ni sale de Caja y queda en el historial de Deudas como "Anulado"; si fue un error, se toca y se deshace.
 - **Cobro diario**: muestra "NO TRABAJÓ" en los días marcados así, y "Marcar todas" no les cobra.
 - **Guía**: un paso nuevo de NOVEDADES explica el aviso de días sin pagar.

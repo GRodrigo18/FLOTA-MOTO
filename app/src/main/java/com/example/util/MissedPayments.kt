@@ -9,7 +9,7 @@ package com.example.util
  */
 object MissedPayments {
 
-    /** Como máximo se revisan los últimos 60 días (lo más viejo ya se maneja como deuda). */
+    /** Como máximo se revisan los últimos 60 días (lo más viejo ya no se avisa). */
     const val MAX_DIAS = 60
 
     /** Desde qué hora el día de hoy ya cuenta como falta si no pagó (igual que el aviso de cobros). */
@@ -38,8 +38,9 @@ object MissedPayments {
     ): List<String> {
         val hoy = FleetDates.normalize(today) ?: return emptyList()
         val limite = FleetDates.plus(hoy, days = -(MAX_DIAS - 1)) ?: return emptyList()
+        // Un inicio de contrato en el futuro (renovación anticipada) no borra los días ya debidos
         val inicio = listOfNotNull(
-            FleetDates.normalize(inicioContrato),
+            FleetDates.normalize(inicioContrato)?.takeIf { it <= hoy },
             FleetDates.normalize(desde),
             agregada?.let { FleetDates.normalize(it) },
             limite
@@ -55,14 +56,19 @@ object MissedPayments {
         return out
     }
 
-    /** Días entre [desde] y [hasta] (ambos incluidos, máx. [MAX_DIAS]) que aún no tienen registro. */
+    /**
+     * Días entre [desde] y [hasta] (ambos incluidos) que aún no tienen registro. Si la parada fue más
+     * larga que [MAX_DIAS], solo hacen falta los últimos [MAX_DIAS] días (los más viejos ya no se avisan).
+     */
     fun daysToExcuse(desde: String, hasta: String, registradas: Set<String>): List<String> {
-        val a = FleetDates.normalize(desde) ?: return emptyList()
         val b = FleetDates.normalize(hasta) ?: return emptyList()
+        val a0 = FleetDates.normalize(desde) ?: return emptyList()
+        val limite = FleetDates.plus(b, days = -(MAX_DIAS - 1)) ?: return emptyList()
+        val a = maxOf(a0, limite)
         if (a > b) return emptyList()
         val out = mutableListOf<String>()
         var d = a
-        while (d <= b && out.size < MAX_DIAS) {
+        while (d <= b) {
             if (d !in registradas) out.add(d)
             d = FleetDates.plus(d, days = 1) ?: break
         }

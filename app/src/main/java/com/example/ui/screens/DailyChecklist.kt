@@ -114,7 +114,8 @@ internal fun DailyChecklistTabContent(
     var confirmUnmarkAll by remember { mutableStateOf(false) }
 
     if (confirmMarkAll) {
-        val pendientes = motosCobro.count { FleetRules.debeCuota(it.estado) && it.placa !in state.pagosDelDiaSeleccionado.filter { p -> p.pagado }.map { p -> p.unitPlaca } }
+        // Pendientes = trabajan y no tienen registro ese día (ni pago ni "No trabajó")
+        val pendientes = motosCobro.count { FleetRules.debeCuota(it.estado) && it.placa !in state.pagosDelDiaSeleccionado.map { p -> p.unitPlaca } }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmMarkAll = false },
             title = { Text("¿Marcar todas como pagadas?") },

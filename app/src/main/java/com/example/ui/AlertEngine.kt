@@ -83,7 +83,7 @@ object AlertEngine {
 
     /** Una moto debe cuota diaria si está en operación y tiene chofer asignado. */
     fun debeCuotaDiaria(u: AlertUnit): Boolean =
-        (u.estado == "Vigente" || u.estado == "Por Vencer") &&
+        com.example.util.FleetRules.debeCuota(u.estado) &&
             u.cliente.isNotBlank() && !u.cliente.equals("Sin asignar", ignoreCase = true)
 
     fun build(

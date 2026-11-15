@@ -199,7 +199,7 @@ data class FleetUiState(
      */
     val missedByPlaca: Map<String, List<String>> by lazy {
         if (!dataLoaded) return@lazy emptyMap()
-        val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val hoy = FleetDates.today()
         MissedPayments.byPlaca(
             today = hoy,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
@@ -207,7 +207,9 @@ data class FleetUiState(
             agregadas = unitAddedDates,
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
-            }.associate { it.placa to it.inicioContrato },
+            // El inicio del contrato NO se usa: al renovar se mueve y borraría días ya debidos.
+            // Se cuenta desde que se registró la moto (o desde que se usa esta versión).
+            }.associate { it.placa to "" },
             registros = dailyPayments.map { it.unitPlaca to it.fecha }
         )
     }
@@ -500,14 +502,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     //  3) Guardar el respaldo en la carpeta de sincronización tras cada cambio de datos.
     @OptIn(FlowPreview::class)
     private fun startAutomaticWork() {
-        // Días sin pagar: se empiezan a llevar desde el primer cobro registrado en la app (o desde hoy),
-        // para no inventar faltas de cuando todavía no se usaba.
+        // Días sin pagar: se empiezan a llevar desde HOY, el primer día con esta versión. Antes no se
+        // registraban los días de taller ni de descanso, así que contar hacia atrás inventaría faltas.
         viewModelScope.launch {
-            val st = uiState.first { it.dataLoaded }
+            uiState.first { it.dataLoaded }
             if (MissedPrefs.desde(prefs) == null) {
-                val primero = st.dailyPayments.filter { it.pagado }.minOfOrNull { it.fecha }
-                    ?.let { FleetDates.normalize(it) }
-                MissedPrefs.setDesde(prefs, primero ?: FleetDates.today())
+                MissedPrefs.setDesde(prefs, FleetDates.today())
                 refreshMissedConfig()
             }
         }
@@ -516,9 +516,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             uiState
                 .filter { it.dataLoaded }
-                .map { st -> st.units.associate { it.placa to it.estado } }
+                .map { st ->
+                    st.units.associate {
+                        it.placa to (it.estado to (it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)))
+                    }
+                }
                 .distinctUntilChanged()
-                .collect { estados -> trackStoppedUnits(estados) }
+                .collect { motos -> trackStoppedUnits(motos) }
         }
         viewModelScope.launch {
             uiState
@@ -554,26 +558,51 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun trackStoppedUnits(estados: Map<String, String>) {
+    /**
+     * Moto parada = en taller, inactiva o sin chofer. Se guarda "fecha|motivo" al parar; al volver a
+     * trabajar, del día en que paró hasta ayer queda "No trabajó" con ese motivo.
+     * Al quedar INACTIVA, además, sus días sin pagar anteriores se anulan (igual que su deuda).
+     */
+    private suspend fun trackStoppedUnits(motos: Map<String, Pair<String, Boolean>>) {
         val hoy = FleetDates.today()
-        val paradas = MissedPrefs.paradas(prefs).filterKeys { it in estados }.toMutableMap()
-        var cambio = paradas.size != MissedPrefs.paradas(prefs).size
-        estados.forEach { (placa, estado) ->
-            val parada = estado == "En Taller" || estado == "Inactivo"
-            val desde = paradas[placa]
-            if (parada && desde == null) {
-                paradas[placa] = hoy
+        val guardadas = MissedPrefs.paradas(prefs)
+        val paradas = guardadas.filterKeys { it in motos }.toMutableMap()
+        var cambio = paradas.size != guardadas.size
+        motos.forEach { (placa, info) ->
+            val (estado, tieneChofer) = info
+            val motivo = when {
+                estado == "Inactivo" -> "Inactiva"
+                estado == "En Taller" -> "En taller"
+                !tieneChofer -> "Sin chofer"
+                else -> null
+            }
+            val guardado = paradas[placa]
+            val desde = guardado?.substringBefore('|')
+            val motivoGuardado = guardado?.substringAfter('|', "")?.ifBlank { null }
+            val unit = uiState.value.units.firstOrNull { it.placa == placa }
+            val registradas = uiState.value.dailyPayments.filter { it.unitPlaca == placa }.map { it.fecha }.toSet()
+            if (motivo != null && guardado == null) {
+                paradas[placa] = "$hoy|$motivo"
                 cambio = true
-            } else if (!parada && desde != null) {
+                if (motivo == "Inactiva" && unit != null) {
+                    val pendientes = uiState.value.missedByPlaca[placa].orEmpty().filter { it !in registradas }
+                    if (pendientes.isNotEmpty()) repository.markNotWorked(unit, pendientes, "Anulado (inactiva)")
+                }
+            } else if (motivo != null && motivo != motivoGuardado && motivo == "Inactiva" && desde != null) {
+                // Estaba en taller o sin chofer y pasó a inactiva: también se anulan sus faltas
+                paradas[placa] = "$desde|$motivo"
+                cambio = true
+                if (unit != null) {
+                    val pendientes = uiState.value.missedByPlaca[placa].orEmpty().filter { it !in registradas }
+                    if (pendientes.isNotEmpty()) repository.markNotWorked(unit, pendientes, "Anulado (inactiva)")
+                }
+            } else if (motivo == null && desde != null) {
                 paradas.remove(placa)
                 cambio = true
-                // Del día en que paró hasta ayer: "No trabajó" (hoy ya puede pagar)
                 val ayer = FleetDates.plus(hoy, days = -1)
-                val unit = uiState.value.units.firstOrNull { it.placa == placa }
                 if (unit != null && ayer != null) {
-                    val ya = uiState.value.dailyPayments.filter { it.unitPlaca == placa }.map { it.fecha }.toSet()
-                    val dias = MissedPayments.daysToExcuse(desde, ayer, ya)
-                    if (dias.isNotEmpty()) repository.markNotWorked(unit, dias, if (estado == "Inactivo") "Inactiva" else "En taller")
+                    val dias = MissedPayments.daysToExcuse(desde, ayer, registradas)
+                    if (dias.isNotEmpty()) repository.markNotWorked(unit, dias, motivoGuardado ?: "No trabajó")
                 }
             }
         }
@@ -1098,6 +1127,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     BackupHelper.saveLocalBackupFile(getApplication(), BackupHelper.serializeToJson(actual))
                 }
                 repository.restoreFromBackup(payload)
+                // Copia traída de otro teléfono o de otra fecha: los días sin pagar se cuentan desde hoy
+                MissedPrefs.clear(prefs)
+                MissedPrefs.setDesde(prefs, FleetDates.today())
+                refreshMissedConfig()
                 markHistoryUsed()
                 showSnackbar("Datos recuperados: ${payload.units.size} motos.")
             } catch (e: Exception) {
@@ -1525,9 +1558,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             repository.updateUnit(updatedUnit)
             // Nombre o placa nuevos: se arrastran a todo el historial de la moto
             if (nombreFinal != fresh.nombreMoto || placaFinal != fresh.placa) {
-                repository.renameUnit(fresh.placa, nombreFinal, placaFinal)
+                // Primero lo recordado (fechas de la moto), para que nadie la vea con la placa nueva sin ellas
                 MissedPrefs.rename(prefs, fresh.placa, placaFinal)
                 refreshMissedConfig()
+                repository.renameUnit(fresh.placa, nombreFinal, placaFinal)
             }
             // Pasó a Inactivo: TODA su deuda se anula (garantía y lo demás; queda en el historial)
             val anulado = if (estadoActualizado == "Inactivo" && fresh.estado != "Inactivo") {
@@ -1661,7 +1695,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertUnit(newUnit)
             // Día en que se registró: antes de eso no hay días sin pagar que avisar
-            MissedPrefs.setAgregada(prefs, newUnit.placa, FleetDates.today())
+            MissedPrefs.setAgregada(
+                prefs, newUnit.placa,
+                maxOf(FleetDates.today(), FleetDates.normalize(newUnit.inicioContrato) ?: FleetDates.today())
+            )
             refreshMissedConfig()
 
             // Si dejó garantía inicial en efectivo/transferencia, entra a Caja Disponible
@@ -1984,9 +2021,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         val mes = hoy.substring(0, 7)
         val registros = repository.paymentsOfMonth(fresh.placa, mes)
         val pagos = registros.filter { it.pagado } // los días "No trabajó" no son pagos
-        val sinPago = if (FleetRules.debeCuota(fresh.estado)) {
-            DriverMessages.unpaidDays(mes, hoy, fresh.inicioContrato, registros.map { it.fecha }.toSet())
-        } else 0
+        // Mismo cálculo que el aviso de días sin pagar (solo los de este mes)
+        val sinPago = uiState.value.missedByPlaca[fresh.placa].orEmpty().count { it.startsWith(mes) }
         return DriverMessages.statement(
             DriverMessages.Statement(
                 moto = fresh.nombreMoto,
