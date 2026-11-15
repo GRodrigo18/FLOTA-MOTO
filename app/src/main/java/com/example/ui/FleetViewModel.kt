@@ -103,6 +103,8 @@ data class FleetUiState(
     val homeHiddenKeys: Set<String> = emptySet(),
     /** true cuando ya se leyó la base de datos (antes, la lista vacía no significa "todo resuelto"). */
     val dataLoaded: Boolean = false,
+    /** Cambia cada pocos minutos: así a las 17:00 o a medianoche los recordatorios se recalculan solos. */
+    val clockTick: Long = 0L,
     val userEmail: String = "",
     val userName: String = "Administrador",
     val hasUsedHistory: Boolean = false,
@@ -183,9 +185,9 @@ data class FleetUiState(
     // Recordatorios (las mismas reglas que usa el aviso diario en segundo plano). Son TODOS los
     // activos, de más urgente a menos: solo desaparecen cuando se resuelve el problema.
     // Los usan la campana, su contador y los avisos al celular.
-    val urgentAlerts: List<UrgentAlert> get() {
+    val urgentAlerts: List<UrgentAlert> by lazy {
         val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        return AlertEngine.sortByUrgency(AlertEngine.build(
+        AlertEngine.sortByUrgency(AlertEngine.build(
             units = units.map { u ->
                 AlertUnit(
                     placa = u.placa,
@@ -208,7 +210,7 @@ data class FleetUiState(
     }
 
     /** Recordatorios que se muestran en Inicio: todos menos los quitados de Inicio. */
-    val homeAlerts: List<UrgentAlert> get() = urgentAlerts.filter { it.hideKey !in homeHiddenKeys }
+    val homeAlerts: List<UrgentAlert> by lazy { urgentAlerts.filter { it.hideKey !in homeHiddenKeys } }
 }
 
 class FleetViewModel(application: Application) : AndroidViewModel(application) {
@@ -283,6 +285,19 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             flowOf(emptyList())
         }
     }
+
+    /**
+     * Reloj de la app: emite la hora cada 5 minutos (y al cambiar de hora o de día). Sin esto, con la
+     * app abierta, "Cobros pendientes" no aparecía a las 17:00 ni un contrato pasaba a "vencido" a medianoche.
+     */
+    private val clockTicker = kotlinx.coroutines.flow.flow {
+        while (true) {
+            val c = Calendar.getInstance()
+            // Valor que cambia cada 5 minutos
+            emit(c.get(Calendar.DAY_OF_YEAR) * 10_000L + c.get(Calendar.HOUR_OF_DAY) * 100L + c.get(Calendar.MINUTE) / 5)
+            kotlinx.coroutines.delay(60_000)
+        }
+    }.distinctUntilChanged()
 
     val uiState: StateFlow<FleetUiState> = combine(
         combine(
@@ -434,7 +449,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             userRoleLabel = currentUser?.role?.label ?: "Administrador",
             users = allUsers
         )
-    }.stateIn(
+    }.combine(clockTicker) { st, tick -> st.copy(clockTick = tick) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = FleetUiState()
@@ -487,6 +502,18 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         if (pruned != current) {
             _homeHiddenKeys.value = pruned
             AlertMemory.saveHomeHidden(prefs, pruned)
+        }
+    }
+
+    /**
+     * Vuelve a poner el aviso fijo aunque nada haya cambiado: al ingresar, al volver a la app y al
+     * conceder el permiso de notificaciones. En Android 14+ el aviso "fijo" se puede deslizar; así
+     * reaparece la próxima vez que se abre la app mientras haya recordatorios pendientes.
+     */
+    fun refreshRemindersSummary() {
+        val st = uiState.value
+        if (st.dataLoaded && st.isLoggedIn) {
+            updateRemindersSummary(st.notificationsEnabled, st.urgentAlerts.map { it.titulo })
         }
     }
 

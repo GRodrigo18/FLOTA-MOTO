@@ -98,56 +98,70 @@ object AlertEngine {
         }
 
         units.forEach { u ->
-            if (u.estado == "Inactivo") return@forEach
+            // Una moto inactiva ya no tiene SOAT, revisión ni contrato que avisar,
+            // pero si el chofer quedó debiendo, la deuda sigue pendiente hasta que se pague.
+            val activa = u.estado != "Inactivo"
+            if (activa) {
 
-            if (u.soatDias <= SOAT_AVISO_DIAS) {
-                addIfNew(
-                    UrgentAlert(
-                        id = "soat_${u.placa}",
-                        tipo = AlertType.SOAT,
-                        titulo = if (u.soatDias <= 0) "SOAT VENCIDO • ${u.nombre} (${u.placa})"
-                        else "SOAT por vencer • ${u.nombre} (${u.placa})",
-                        descripcion = if (u.soatDias <= 0) "Venció el ${u.soatFin}. ¡Renovar de inmediato!"
-                        else "Vence en ${u.soatDias} días (${u.soatFin}). ¡Renovar pronto!",
-                        unitPlaca = u.placa,
-                        hora = if (u.soatDias <= 0) "Vencido" else "Ahora",
-                        hideKey = hideKeyFor("soat_${u.placa}", if (u.soatDias <= 0) STAGE_VENCIDO else STAGE_PRONTO)
+                // Días reales hasta el vencimiento (negativo = ya venció). El último día válido NO es "vencido".
+                // soatDias viene recortado a 0 (hoy y vencido valen 0): se mira la fecha para distinguirlos.
+                val diasSoat = if (u.soatDias > 0) u.soatDias
+                else FleetDates.daysSigned(u.soatFin, now)?.takeIf { it <= 0 } ?: -1
+                if (diasSoat <= SOAT_AVISO_DIAS) {
+                    val vencido = diasSoat < 0
+                    addIfNew(
+                        UrgentAlert(
+                            id = "soat_${u.placa}",
+                            tipo = AlertType.SOAT,
+                            titulo = if (vencido) "SOAT VENCIDO • ${u.nombre} (${u.placa})"
+                            else "SOAT por vencer • ${u.nombre} (${u.placa})",
+                            descripcion = when {
+                                vencido -> "Venció el ${u.soatFin}. ¡Renovar de inmediato!"
+                                diasSoat == 0 -> "Vence HOY (${u.soatFin}). ¡Renovar hoy!"
+                                diasSoat == 1 -> "Vence mañana (${u.soatFin}). ¡Renovar pronto!"
+                                else -> "Vence en $diasSoat días (${u.soatFin}). ¡Renovar pronto!"
+                            },
+                            unitPlaca = u.placa,
+                            hora = if (vencido) "Vencido" else "Ahora",
+                            hideKey = hideKeyFor("soat_${u.placa}", if (vencido) STAGE_VENCIDO else STAGE_PRONTO)
+                        )
                     )
-                )
-            }
+                }
 
-            if (u.revisionPendiente) {
-                addIfNew(
-                    UrgentAlert(
-                        id = "rev_${u.placa}",
-                        tipo = AlertType.REVISION,
-                        titulo = "Revisión Técnica del Mes • ${u.nombre}",
-                        descripcion = "Revisión técnica o mantenimiento mensual pendiente este mes para ${u.nombre} (${u.placa}).",
-                        unitPlaca = u.placa,
-                        hora = "Este Mes"
+                if (u.revisionPendiente) {
+                    addIfNew(
+                        UrgentAlert(
+                            id = "rev_${u.placa}",
+                            tipo = AlertType.REVISION,
+                            titulo = "Revisión Técnica del Mes • ${u.nombre}",
+                            descripcion = "Revisión técnica o mantenimiento mensual pendiente este mes para ${u.nombre} (${u.placa}).",
+                            unitPlaca = u.placa,
+                            hora = "Este Mes"
+                        )
                     )
-                )
-            }
+                }
 
-            val diasContrato = FleetDates.daysSigned(u.finContrato, now)
-            if (diasContrato != null && diasContrato <= CONTRATO_AVISO_DIAS) {
-                addIfNew(
-                    UrgentAlert(
-                        id = "contrato_${u.placa}",
-                        tipo = AlertType.CONTRATO,
-                        titulo = if (diasContrato < 0) "Contrato vencido • ${u.nombre}" else "Contrato por vencer • ${u.nombre}",
-                        descripcion = when {
-                            diasContrato < 0 -> "El contrato venció el ${u.finContrato} (hace ${-diasContrato} días) • ${u.placa}. Renuévalo o finalízalo."
-                            diasContrato == 0 -> "El contrato vence hoy (${u.finContrato}) • ${u.placa}."
-                            diasContrato == 1 -> "El contrato vence mañana (${u.finContrato}) • ${u.placa}."
-                            else -> "El contrato vence en $diasContrato días (${u.finContrato}) • ${u.placa}."
-                        },
-                        unitPlaca = u.placa,
-                        hora = "Pronto",
-                        hideKey = hideKeyFor("contrato_${u.placa}", if (diasContrato < 0) STAGE_VENCIDO else STAGE_PRONTO)
+                val diasContrato = FleetDates.daysSigned(u.finContrato, now)
+                if (diasContrato != null && diasContrato <= CONTRATO_AVISO_DIAS) {
+                    addIfNew(
+                        UrgentAlert(
+                            id = "contrato_${u.placa}",
+                            tipo = AlertType.CONTRATO,
+                            titulo = if (diasContrato < 0) "Contrato vencido • ${u.nombre}" else "Contrato por vencer • ${u.nombre}",
+                            descripcion = when {
+                                diasContrato < 0 -> "El contrato venció el ${u.finContrato} (hace ${-diasContrato} días) • ${u.placa}. Renuévalo o finalízalo."
+                                diasContrato == 0 -> "El contrato vence hoy (${u.finContrato}) • ${u.placa}."
+                                diasContrato == 1 -> "El contrato vence mañana (${u.finContrato}) • ${u.placa}."
+                                else -> "El contrato vence en $diasContrato días (${u.finContrato}) • ${u.placa}."
+                            },
+                            unitPlaca = u.placa,
+                            hora = "Pronto",
+                            hideKey = hideKeyFor("contrato_${u.placa}", if (diasContrato < 0) STAGE_VENCIDO else STAGE_PRONTO)
+                        )
                     )
-                )
-            }
+                }
+
+            } // fin de: solo motos activas
 
             if (u.deuda > 0.0) {
                 addIfNew(
@@ -176,7 +190,9 @@ object AlertEngine {
                         titulo = "Cobros pendientes hoy: ${sinPagar.size}",
                         descripcion = "Aún no pagan la cuota: $nombres" + if (resto > 0) " y $resto más." else ".",
                         unitPlaca = null,
-                        hora = "Hoy"
+                        hora = "Hoy",
+                        // Clave por día: si se quitó de Inicio hoy, mañana vuelve a aparecer
+                        hideKey = hideKeyFor("cobros_hoy", FleetDates.today(now))
                     )
                 )
             }

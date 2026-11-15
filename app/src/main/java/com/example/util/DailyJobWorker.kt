@@ -58,11 +58,8 @@ class DailyJobWorker(
         if (MonthlyRevision.checkAndMark(prefs)) repo.resetMonthlyRevision()
 
         val units = repo.allUnits.first()
-        if (units.isEmpty()) {
-            // Sin motos no hay nada pendiente: se quita el resumen fijo si quedó alguno.
-            NotificationHelper.cancelRemindersSummary(ctx)
-            return
-        }
+        // Aunque no haya motos se evalúa todo: el stock bajo de aceite o llantas también es un recordatorio
+        // (igual que en la app). Si no queda nada pendiente, el aviso fijo se quita solo.
 
         val payments = repo.allDailyPayments.first()
         val inventory = repo.allInventory.first()
@@ -132,7 +129,8 @@ class DailyJobWorker(
 
         AlertMemory.markNotified(prefs, alerts.map { it.id })
 
-        if (mode == MODE_EVENING && AutoBackup.hasFolder(ctx)) {
+        // Nunca un respaldo vacío (sin motos): en un teléfono nuevo pisaría el respaldo bueno en Drive
+        if (mode == MODE_EVENING && units.isNotEmpty() && AutoBackup.hasFolder(ctx)) {
             val email = prefs.getString("user_email", "") ?: ""
             val json = BackupHelper.serializeToJson(repo.getFullBackupPayload(email))
             AutoBackup.writeBackup(ctx, json)

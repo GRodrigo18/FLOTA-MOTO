@@ -144,7 +144,8 @@ class AlertEngineTest {
         val alerts = AlertEngine.build(
             listOf(unit("A", deuda = 10.0, revisionPendiente = true)), emptySet(), stockAceite = 1, hourOfDay = 18, now = now
         )
-        alerts.forEach { assertEquals(it.id, it.hideKey) }
+        // "cobros_hoy" lleva la fecha en la clave (ver la prueba de cobros del día)
+        alerts.filter { it.id != "cobros_hoy" }.forEach { assertEquals(it.id, it.hideKey) }
     }
 
     @Test
@@ -176,5 +177,31 @@ class AlertEngineTest {
             listOf(unit("A", deuda = 1.0), unit("B", deuda = 2.0)), emptySet(), null, 10, now = now
         )
         assertEquals(listOf("deuda_A", "deuda_B"), AlertEngine.sortByUrgency(alerts).map { it.id })
+    }
+
+    @Test
+    fun `moto inactiva con deuda sigue recordando la deuda (y nada mas)`() {
+        val u = unit("A", soatDias = 0, finContrato = "2026-10-01", deuda = 120.0, revisionPendiente = true, estado = "Inactivo")
+        val alerts = AlertEngine.build(listOf(u), emptySet(), null, hourOfDay = 10, now = now)
+        assertEquals(listOf("deuda_A"), alerts.map { it.id })
+    }
+
+    @Test
+    fun `SOAT que vence hoy no se llama vencido`() {
+        val hoy = AlertUnit("A", "Moto A", "Vigente", "Juan", 0, "2026-10-15", false, "2027-01-01", 0.0)
+        val alert = AlertEngine.build(listOf(hoy), emptySet(), null, hourOfDay = 10, now = now).single()
+        assertTrue(alert.titulo.startsWith("SOAT por vencer"))
+        assertTrue(alert.hideKey.endsWith(AlertEngine.STAGE_PRONTO))
+        val ayer = hoy.copy(soatFin = "2026-10-14")
+        val vencida = AlertEngine.build(listOf(ayer), emptySet(), null, hourOfDay = 10, now = now).single()
+        assertTrue(vencida.titulo.startsWith("SOAT VENCIDO"))
+        assertTrue(vencida.hideKey.endsWith(AlertEngine.STAGE_VENCIDO))
+    }
+
+    @Test
+    fun `cobros del dia tienen una clave por dia`() {
+        val hoy = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = now).single { it.id == "cobros_hoy" }
+        val manana = AlertEngine.build(listOf(unit("A")), emptySet(), null, hourOfDay = 18, now = at(2026, 10, 16)).single { it.id == "cobros_hoy" }
+        assertTrue(hoy.hideKey != manana.hideKey)
     }
 }

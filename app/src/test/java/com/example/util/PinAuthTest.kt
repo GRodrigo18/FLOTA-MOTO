@@ -39,7 +39,8 @@ class PinAuthTest {
 
     @Test
     fun `el hash no contiene el PIN y mide 64 caracteres hex`() {
-        val hash = PinAuth.hashPin("4821", PinAuth.newSaltHex())
+        // Sal fija: con una sal al azar, el hash podía contener "4821" por casualidad (prueba inestable)
+        val hash = PinAuth.hashPin("4821", "0f1e2d3c4b5a69788796a5b4c3d2e1f0")
         assertEquals(64, hash.length)
         assertFalse(hash.contains("4821"))
     }

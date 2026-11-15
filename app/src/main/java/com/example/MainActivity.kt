@@ -126,6 +126,8 @@ class MainActivity : FragmentActivity() {
             viewModel.logout()
         }
         backgroundSince = 0L
+        // Al volver a la app se repone el aviso fijo de recordatorios (por si lo deslizaron)
+        viewModel.refreshRemindersSummary()
     }
 
     private companion object {
@@ -138,7 +140,9 @@ class MainActivity : FragmentActivity() {
      * Solo se deja pedido: la campana se abre cuando ya se ingresó con el PIN (MainAppScaffold).
      */
     private fun handleOpenAlertsIntent(intent: android.content.Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_OPEN_ALERTS, false) == true) {
+        // Abierta desde "Recientes" con el intento viejo de la notificación: no volver a abrir la campana
+        val fromHistory = (intent?.flags ?: 0) and android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (!fromHistory && intent?.getBooleanExtra(EXTRA_OPEN_ALERTS, false) == true) {
             intent.removeExtra(EXTRA_OPEN_ALERTS)
             viewModel.requestOpenAlerts()
         }
@@ -163,7 +167,11 @@ class MainActivity : FragmentActivity() {
 
                 val notificationPermissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
-                ) { /* Si no la concede, simplemente no recibirá avisos; la app sigue funcionando. */ }
+                ) { concedido ->
+                    // Recién concedido: se muestra de inmediato el aviso fijo de recordatorios pendientes.
+                    // Si no lo concede, simplemente no recibirá avisos; la app sigue funcionando.
+                    if (concedido) viewModel.refreshRemindersSummary()
+                }
 
                 // Se activa solo una vez por sesión, al ingresar: pide el permiso de notificaciones
                 // (Android 13+) y programa los avisos diarios de las 8:00 y 19:30 junto con el
@@ -237,9 +245,11 @@ fun MainAppScaffold(
 
     // Pedidos de abrir la campana (línea de Inicio, "Ver todas" o la notificación fija).
     // Este Scaffold solo existe tras ingresar con el PIN, así que nunca se salta el bloqueo.
+    // Si hay otra ventana abierta (por ejemplo, editando una moto) o la guía está activa, se espera:
+    // así no se pierde lo que se estaba escribiendo.
     val openAlertsRequested by viewModel.openAlertsRequests.collectAsStateWithLifecycle()
-    LaunchedEffect(openAlertsRequested) {
-        if (openAlertsRequested) {
+    LaunchedEffect(openAlertsRequested, state.activeDialog, state.isInteractiveTourActive) {
+        if (openAlertsRequested && state.activeDialog == null && !state.isInteractiveTourActive) {
             viewModel.consumeOpenAlertsRequest()
             viewModel.openDialog(DialogType.EMERGENT_ALERTS)
         }

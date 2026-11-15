@@ -99,8 +99,15 @@ el ingreso se bloquea 30 segundos.
   - Si el problema empeora (ej. el contrato pasa de "por vencer" a "vencido", o el SOAT vence), vuelve a salir en Inicio.
   - La **campana** ("Recordatorios pendientes") muestra **todos**, siempre, del más urgente al menos urgente, sin botón para borrar. Los ocultos en Inicio dicen "Oculto en Inicio" y tienen "Mostrar en Inicio". El número rojo de la campana cuenta todos.
 - **Tocar un recordatorio lleva a resolverlo**: contrato → ficha de la moto en Flota (Renovar / Editar); SOAT y revisión → editar la moto; deuda → registrar abono; cobros del día → Pagos; stock → Taller.
-- **Notificación fija y silenciosa** en el celular: "MotoFlota: N recordatorios pendientes", sin sonido ni vibración, que no se puede deslizar mientras haya pendientes y desaparece sola cuando ya no hay. Al tocarla se abre la app (pide el PIN si hace falta) con la campana abierta. Cada recordatorio sigue avisando una vez al día mientras no se resuelva, aunque esté oculto en Inicio. Respeta "Silenciar avisos".
+- **Notificación fija y silenciosa** en el celular: "MotoFlota: N recordatorios pendientes", sin sonido ni vibración, que se queda mientras haya pendientes y desaparece sola cuando ya no hay. En Android 14 o más nuevo el sistema deja deslizarla, pero vuelve a aparecer al abrir la app y en los avisos de las 8:00 y 19:30. Al tocarla se abre la app (pide el PIN si hace falta) con la campana abierta. Cada recordatorio sigue avisando una vez al día mientras no se resuelva, aunque esté oculto en Inicio. Respeta "Silenciar avisos".
+- **Otros arreglos de esta versión**:
+  - Una moto **inactiva** que quedó con deuda sigue recordando la deuda hasta que se pague (antes el aviso desaparecía al finalizar el contrato).
+  - El SOAT que vence **hoy** dice "Vence HOY", no "VENCIDO" (era un día antes de tiempo).
+  - Con la app abierta, los recordatorios se actualizan solos con la hora (cobros de las 17:00, vencimientos a medianoche).
+  - Si se estaba llenando una ventana (ej. editando una moto), la campana espera a que se cierre y no borra lo escrito.
+  - "Cobros pendientes hoy" quitado de Inicio vuelve a salir al día siguiente si hay cuotas sin cobrar.
 - **Guía actualizada**: quien ya hizo la guía verá una sola vez solo las **NOVEDADES** de esta versión (la campana de recordatorios y el ojo de Inicio).
+- Compilada con el SDK de Android: Lint sin errores y 83 pruebas automáticas pasan.
 - Versión 6 / 1.5. Sin cambios en la base de datos (sigue en la versión 7): actualizar no toca los datos.
 
 ## Cambios de la versión 1.4 (auditoría completa, 6 nov 2026)
