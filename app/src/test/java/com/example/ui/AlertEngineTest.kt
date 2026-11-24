@@ -220,4 +220,30 @@ class AlertEngineTest {
             missedByPlaca = mapOf("A" to listOf("2026-10-15"))).single()
         assertEquals("No pagó hoy • Moto A", a.titulo)
     }
+
+    @Test
+    fun `copias de seguridad pendientes van a la campana`() {
+        val hora = 60 * 60 * 1000L
+        val sinArchivo = BackupStatus(driveLinked = false, lastDriveAt = 0L, lastEmailAt = now, hasData = true)
+        assertEquals(listOf("respaldo_drive"), AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, backup = sinArchivo).map { it.id })
+
+        val vieja = BackupStatus(driveLinked = true, lastDriveAt = now - 72 * hora, lastEmailAt = now - 10 * 24 * hora, hasData = true)
+        val alerts = AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, backup = vieja)
+        assertEquals(setOf("respaldo_drive", "respaldo_correo"), alerts.map { it.id }.toSet())
+        assertTrue(alerts.all { it.tipo == AlertType.RESPALDO })
+
+        val alDia = BackupStatus(driveLinked = true, lastDriveAt = now - hora, lastEmailAt = now - 24 * hora, hasData = true)
+        assertTrue(AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, backup = alDia).isEmpty())
+        // Sin motos no hay nada que respaldar
+        assertTrue(AlertEngine.build(emptyList(), emptySet(), null, 10, now = now, backup = sinArchivo.copy(hasData = false)).isEmpty())
+    }
+
+    @Test
+    fun `elegir el archivo de Drive cambia la clave del aviso de copia`() {
+        val a = AlertEngine.build(emptyList(), emptySet(), null, 10, now = now,
+            backup = BackupStatus(false, 0L, now, true)).single()
+        val b = AlertEngine.build(emptyList(), emptySet(), null, 10, now = now,
+            backup = BackupStatus(true, now - 100 * 60 * 60 * 1000L, now, true)).single()
+        assertNotEquals(a.hideKey, b.hideKey)
+    }
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
@@ -337,6 +338,7 @@ fun FleetScreen(
             loadHistory = { unit, onResult -> viewModel.loadUnitHistory(unit, onResult) },
             onDelete = { viewModel.deleteUnit(state.selectedUnit) },
             loadStatement = { unit, onResult -> viewModel.loadStatement(unit, onResult) },
+            onOpenPayments = { viewModel.openDialog(DialogType.MISSED_PAYMENTS) },
             onShareStatement = { text -> viewModel.shareStatement(context, text) }
         )
     }
@@ -566,6 +568,7 @@ private fun UnitDetailBottomSheet(
     loadHistory: (FleetUnitEntity, (FleetRepository.UnitHistory) -> Unit) -> Unit = { _, _ -> },
     onDelete: () -> Unit = {},
     loadStatement: (FleetUnitEntity, (String) -> Unit) -> Unit = { _, _ -> },
+    onOpenPayments: () -> Unit = {},
     onShareStatement: (String) -> Unit = {}
 ) {
     var statementText by remember { mutableStateOf<String?>(null) }
@@ -679,6 +682,17 @@ private fun UnitDetailBottomSheet(
                             Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Estado de cuenta", fontSize = AppText.Body, maxLines = 1)
+                        }
+                        // Días sin pagar y "avisar pagos desde" de esta moto
+                        OutlinedButton(
+                            onClick = onOpenPayments,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Pagos", fontSize = AppText.Body, maxLines = 1)
                         }
                     }
                 }

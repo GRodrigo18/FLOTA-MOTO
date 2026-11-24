@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -112,6 +113,10 @@ data class FleetUiState(
     /** Desde qué día se llevan los días sin pagar, y el día en que se registró cada moto. */
     val faltasDesde: String = "",
     val unitAddedDates: Map<String, String> = emptyMap(),
+    /** Fecha elegida por el dueño para avisar los pagos de cada moto (placa → fecha). */
+    val avisarDesde: Map<String, String> = emptyMap(),
+    /** Estado de las copias de seguridad (para el recordatorio de la campana). */
+    val backupStatus: BackupStatus? = null,
     val userEmail: String = "",
     val userName: String = "Administrador",
     val hasUsedHistory: Boolean = false,
@@ -205,6 +210,7 @@ data class FleetUiState(
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             desde = faltasDesde,
             agregadas = unitAddedDates,
+            avisarDesde = avisarDesde,
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
             // El inicio del contrato NO se usa: al renovar se mueve y borraría días ya debidos.
@@ -233,6 +239,7 @@ data class FleetUiState(
             },
             paidTodayPlacas = dailyPayments.filter { it.fecha == hoy && it.pagado }.map { it.unitPlaca }.toSet(),
             missedByPlaca = missedByPlaca,
+            backup = backupStatus?.copy(hasData = units.isNotEmpty()),
             stockAceite = if (inventory.isNotEmpty()) stockAceiteBotellas else null,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llantaItem?.stock,
@@ -267,10 +274,26 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private val _homeHiddenKeys = MutableStateFlow(AlertMemory.homeHidden(prefs))
 
     /** (desde cuándo se llevan las faltas, día en que se registró cada moto) */
-    private val _missedConfig = MutableStateFlow((MissedPrefs.desde(prefs) ?: "") to MissedPrefs.agregadas(prefs))
+    private val _missedConfig = MutableStateFlow(readMissedConfig())
+
+    private fun readMissedConfig() = Triple(MissedPrefs.desde(prefs) ?: "", MissedPrefs.agregadas(prefs), MissedPrefs.avisarDesde(prefs))
 
     private fun refreshMissedConfig() {
-        _missedConfig.value = (MissedPrefs.desde(prefs) ?: "") to MissedPrefs.agregadas(prefs)
+        _missedConfig.value = readMissedConfig()
+    }
+
+    /** Estado de las copias; se relee tras copiar/enviar y con el reloj interno. */
+    private val _backupStatus = MutableStateFlow(readBackupStatus())
+
+    private fun readBackupStatus() = BackupStatus(
+        driveLinked = AutoBackup.hasFolder(getApplication()),
+        lastDriveAt = AutoBackup.lastBackupAt(getApplication()),
+        lastEmailAt = prefs.getLong("last_email_backup_at", 0L),
+        hasData = true
+    )
+
+    private fun refreshBackupStatus() {
+        _backupStatus.value = readBackupStatus()
     }
 
     /** true = alguien pidió abrir la campana (aviso tocado, línea de Inicio...). Ver [consumeOpenAlertsRequest]. */
@@ -335,7 +358,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             emit(c.get(Calendar.DAY_OF_YEAR) * 10_000L + c.get(Calendar.HOUR_OF_DAY) * 100L + c.get(Calendar.MINUTE) / 5)
             kotlinx.coroutines.delay(60_000)
         }
-    }.distinctUntilChanged()
+    }.distinctUntilChanged().onEach { refreshBackupStatus() }
 
     val uiState: StateFlow<FleetUiState> = combine(
         combine(
@@ -488,7 +511,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             users = allUsers
         )
     }.combine(clockTicker) { st, tick -> st.copy(clockTick = tick) }
-        .combine(_missedConfig) { st, cfg -> st.copy(faltasDesde = cfg.first, unitAddedDates = cfg.second) }
+        .combine(_missedConfig) { st, cfg -> st.copy(faltasDesde = cfg.first, unitAddedDates = cfg.second, avisarDesde = cfg.third) }
+        .combine(_backupStatus) { st, b -> st.copy(backupStatus = b) }
         .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -628,6 +652,42 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * El dueño elige desde qué fecha quiere que se le avisen los pagos de ESTA moto
+     * (hasta 6 meses atrás). [fecha] = null vuelve a "automático" (desde que se registró la moto).
+     */
+    fun setPaymentAlertStart(unit: FleetUnitEntity, fecha: String?) {
+        val hoy = FleetDates.today()
+        val normal = fecha?.let { FleetDates.normalize(it) }
+        if (fecha != null && normal == null) {
+            showSnackbar("Fecha no válida.")
+            return
+        }
+        if (normal != null && normal > hoy) {
+            showSnackbar("Elige hoy o un día anterior.")
+            return
+        }
+        val minimo = FleetDates.plus(hoy, days = -(MissedPayments.MAX_DIAS_ELEGIDO - 1)) ?: hoy
+        val final = normal?.let { maxOf(it, minimo) }
+        MissedPrefs.setAvisarDesde(prefs, unit.placa, final)
+        refreshMissedConfig()
+        showSnackbar(
+            if (final == null) "${unit.nombreMoto}: pagos avisados en automático."
+            else "${unit.nombreMoto}: se avisan los pagos desde el ${FleetDates.pretty(final)}." +
+                if (normal != final) " (máximo 6 meses atrás)" else ""
+        )
+    }
+
+    /** El dueño marca todos los días pendientes de una moto como "No trabajó" (por ejemplo, días viejos). */
+    fun markAllMissedNotWorked(unit: FleetUnitEntity) {
+        val dias = uiState.value.missedByPlaca[unit.placa].orEmpty()
+        if (dias.isEmpty()) return
+        viewModelScope.launch {
+            repository.markNotWorked(unit, dias)
+            showSnackbar("${unit.nombreMoto}: ${dias.size} día(s) marcados «No trabajó».")
+        }
+    }
+
     private fun pruneHomeHidden(activeKeys: List<String>) {
         val current = _homeHiddenKeys.value
         val pruned = AlertMemory.prune(current, activeKeys)
@@ -687,6 +747,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         val huella = payload.copy(exportDate = "").hashCode()
         if (huella == lastBackupFingerprint) return
         val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AutoBackup.writeBackup(app, BackupHelper.serializeToJson(payload)) }
+        refreshBackupStatus()
         if (ok) lastBackupFingerprint = huella
     }
 
@@ -951,6 +1012,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 .putString("last_cloud_sync", _lastCloudSync.value)
                 .putLong("last_email_backup_at", System.currentTimeMillis())
                 .apply()
+            refreshBackupStatus()
             showSnackbar("Abriendo correo para enviar respaldo a ${_userEmail.value}")
         }
     }
@@ -1064,12 +1126,14 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     fun setSyncFolder(context: Context, treeUri: android.net.Uri) {
         AutoBackup.setFolder(context, treeUri)
         _syncReady.value = isSyncConfigured()
+        refreshBackupStatus()
     }
 
     /** Archivo de copia en Google Drive (creado con "Guardar copia en Google Drive" o elegido si ya existía). */
     fun setSyncDocument(context: Context, docUri: android.net.Uri, isNewFile: Boolean) {
         AutoBackup.setDocument(context, docUri)
         _syncReady.value = isSyncConfigured()
+        refreshBackupStatus()
         // Archivo nuevo: se llena de inmediato. Archivo que ya existía: NO se toca, porque puede
         // tener la copia que se quiere recuperar en un teléfono nuevo.
         if (isNewFile) viewModelScope.launch { autoBackupToFolder() }
@@ -1078,6 +1142,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     fun clearSyncFolder(context: Context) {
         AutoBackup.clearFolder(context)
         _syncReady.value = isSyncConfigured()
+        refreshBackupStatus()
     }
 
     fun backupToSyncFolderNow(context: Context) {
@@ -1089,11 +1154,74 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
             val json = BackupHelper.serializeToJson(payload)
             val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AutoBackup.writeBackup(context, json) }
+            refreshBackupStatus()
             showSnackbar(
                 if (ok) "Respaldo guardado en \"${AutoBackup.folderName(context)}\"."
                 else "No se pudo guardar en Drive. Revisa el internet o toca «Cambiar»."
             )
         }
+    }
+
+    /** Lo que hay dentro de una copia, para mostrarlo ANTES de recuperarla. */
+    data class BackupPreview(
+        val json: String,
+        val fecha: String,
+        val motos: Int,
+        val pagos: Int,
+        val movimientos: Int,
+        val origen: String
+    )
+
+    private fun buildPreview(json: String?, origen: String): BackupPreview? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            val p = BackupHelper.parseFromJson(json)
+            BackupPreview(
+                json = json,
+                fecha = p.exportDate,
+                motos = p.units.size,
+                pagos = p.dailyPayments.count { it.pagado },
+                movimientos = p.financeMovements.size,
+                origen = origen
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Lee la copia guardada en Drive (el archivo elegido en este teléfono) y muestra qué tiene. */
+    fun previewDriveBackup(context: Context, onResult: (BackupPreview?) -> Unit) {
+        viewModelScope.launch {
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AutoBackup.readLatestBackup(context) }
+            val preview = buildPreview(json, AutoBackup.folderName(context) ?: "Google Drive")
+            if (preview == null) showSnackbar("No se pudo leer la copia de Drive. Revisa el internet o elige el archivo.")
+            onResult(preview)
+        }
+    }
+
+    /** Lee una copia elegida con el selector (Drive, Descargas, correo...) y muestra qué tiene. */
+    fun previewFileBackup(context: Context, uri: android.net.Uri, onResult: (BackupPreview?) -> Unit) {
+        viewModelScope.launch {
+            val json = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            val preview = buildPreview(json, "Archivo elegido")
+            if (preview == null) showSnackbar("Ese archivo no es una copia de MotoFlota o no se pudo leer.")
+            onResult(preview)
+        }
+    }
+
+    /**
+     * Recupera la copia mostrada. Si [linkUri] no es null, ese archivo queda como la copia automática
+     * en Drive (así, después de recuperar en un teléfono nuevo, las copias siguen guardándose ahí).
+     */
+    fun restorePreview(context: Context, preview: BackupPreview, linkUri: android.net.Uri?) {
+        if (linkUri != null) setSyncDocument(context, linkUri, isNewFile = false)
+        restoreFromJson(preview.json)
     }
 
     fun restoreFromSyncFolder(context: Context) {
@@ -2105,7 +2233,7 @@ data class Tuple7<A, B, C, D, E, F, G>(val v1: A, val v2: B, val v3: C, val v4: 
  * 14 = v1.4, 15 = v1.5); en modo novedades se muestran los pasos con since > versión vista.
  */
 object TourNews {
-    const val CURRENT_VERSION = 16
+    const val CURRENT_VERSION = 17
     const val KEY_SEEN_VERSION = "tour_news_seen_version"
     const val KEY_TOUR_DONE = "has_completed_interactive_tour_v2"
     const val OLD_KEY_V14_SEEN = "tour_news_v14_seen"

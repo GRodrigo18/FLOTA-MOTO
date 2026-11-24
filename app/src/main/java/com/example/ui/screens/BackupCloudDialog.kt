@@ -83,8 +83,10 @@ fun BackupCloudDialog(
     val context = LocalContext.current
     var folderName by remember { mutableStateOf(AutoBackup.folderName(context)) }
     var lastAt by remember { mutableStateOf(AutoBackup.lastBackupAt(context)) }
-    var restoreMenu by remember { mutableStateOf(false) }
-    var pendingRestore by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var preview by remember { mutableStateOf<com.example.ui.FleetViewModel.BackupPreview?>(null) }
+    var previewUri by remember { mutableStateOf<Uri?>(null) }
+    var linkPicked by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(false) }
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         if (uri != null) {
@@ -92,21 +94,51 @@ fun BackupCloudDialog(
             folderName = AutoBackup.folderName(context)
         }
     }
+    // Elegir una copia en Google Drive (o en Descargas, correo...) con el selector del teléfono
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) pendingRestore = { viewModel.restoreFromFile(context, uri) }
+        if (uri != null) {
+            loading = true
+            viewModel.previewFileBackup(context, uri) { p ->
+                loading = false
+                previewUri = uri
+                linkPicked = true
+                preview = p
+            }
+        }
     }
 
-    // Confirmación antes de reemplazar los datos
-    pendingRestore?.let { action ->
+    // Antes de reemplazar los datos se muestra QUÉ tiene la copia (fecha y cantidades)
+    preview?.let { p ->
         AlertDialog(
-            onDismissRequest = { pendingRestore = null },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = WarningAmber) },
+            onDismissRequest = { preview = null },
+            icon = { Icon(Icons.Default.Restore, contentDescription = null, tint = NavyPrimary) },
             title = { Text("¿Recuperar esta copia?") },
-            text = { Text("Los datos de ahora se reemplazan por los de la copia.", style = MaterialTheme.typography.bodyLarge) },
-            confirmButton = {
-                Button(onClick = { action(); pendingRestore = null; onDismiss() }) { Text("Sí, recuperar") }
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(p.origen, style = MaterialTheme.typography.titleSmall)
+                    Text("Guardada: ${p.fecha}", style = MaterialTheme.typography.bodyLarge)
+                    Text("${p.motos} moto(s) • ${p.pagos} cobro(s) • ${p.movimientos} movimiento(s) de Caja", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Los datos de este celular se reemplazan por los de la copia. Antes se guarda una copia de lo que hay ahora, por si acaso.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (previewUri != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(checked = linkPicked, onCheckedChange = { linkPicked = it })
+                            Text("Seguir guardando las copias en este archivo", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             },
-            dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("No") } }
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.restorePreview(context, p, if (previewUri != null && linkPicked) previewUri else null)
+                    preview = null
+                    onDismiss()
+                }) { Text("Sí, recuperar") }
+            },
+            dismissButton = { TextButton(onClick = { preview = null }) { Text("No") } }
         )
         return
     }
@@ -162,33 +194,42 @@ fun BackupCloudDialog(
                     viewModel.exportAndEmailBackup(context)
                 }
 
-                if (!restoreMenu) {
-                    OutlinedButton(
-                        onClick = { restoreMenu = true },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Icon(Icons.Default.Restore, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Recuperar datos", style = MaterialTheme.typography.titleSmall)
-                    }
-                } else {
-                    Text("¿De dónde?", style = MaterialTheme.typography.titleSmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { pendingRestore = { viewModel.restoreFromSyncFolder(context) } },
-                            enabled = folderName != null,
-                            modifier = Modifier.weight(1f).height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("De Drive") }
-                        OutlinedButton(
-                            onClick = { filePicker.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) },
-                            modifier = Modifier.weight(1f).height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("De un archivo") }
-                    }
+                // Recuperar: la copia de Drive de este teléfono, u otra copia que esté en Drive
+                Text("Recuperar datos", style = MaterialTheme.typography.titleSmall)
+                OutlinedButton(
+                    onClick = {
+                        loading = true
+                        viewModel.previewDriveBackup(context) { p ->
+                            loading = false
+                            previewUri = null
+                            preview = p
+                        }
+                    },
+                    enabled = folderName != null && !loading,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Icon(Icons.Default.Restore, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (loading) "Leyendo la copia…" else "Recuperar mi copia de Drive", style = MaterialTheme.typography.titleSmall)
                 }
+                OutlinedButton(
+                    onClick = { filePicker.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Buscar otra copia en Drive", style = MaterialTheme.typography.titleSmall)
+                }
+                Text(
+                    "En el selector toca ☰ › Drive y elige «MotoFlota_respaldo.json» (o un archivo enviado a tu correo). Antes de recuperar verás la fecha y cuántas motos tiene.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } }

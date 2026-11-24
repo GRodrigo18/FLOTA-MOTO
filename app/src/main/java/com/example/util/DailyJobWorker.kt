@@ -7,6 +7,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.repository.FleetRepository
 import com.example.ui.AlertEngine
 import com.example.ui.AlertUnit
+import com.example.ui.BackupStatus
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -61,6 +62,14 @@ class DailyJobWorker(
         // Aunque no haya motos se evalúa todo: el stock bajo de aceite o llantas también es un recordatorio
         // (igual que en la app). Si no queda nada pendiente, el aviso fijo se quita solo.
 
+        // Copia de la tarde ANTES de calcular los avisos (así el recordatorio de copia queda al día).
+        // Nunca un respaldo vacío (sin motos): en un teléfono nuevo pisaría el respaldo bueno en Drive.
+        if (mode == MODE_EVENING && units.isNotEmpty() && AutoBackup.hasFolder(ctx)) {
+            val email = prefs.getString("user_email", "") ?: ""
+            val json = BackupHelper.serializeToJson(repo.getFullBackupPayload(email))
+            AutoBackup.writeBackup(ctx, json)
+        }
+
         val payments = repo.allDailyPayments.first()
         val inventory = repo.allInventory.first()
         val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
@@ -82,7 +91,8 @@ class DailyJobWorker(
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
             }.associate { it.placa to "" }, // igual que la app: no se usa el inicio del contrato
-            registros = payments.map { it.unitPlaca to it.fecha }
+            registros = payments.map { it.unitPlaca to it.fecha },
+            avisarDesde = MissedPrefs.avisarDesde(prefs)
         )
 
         val alerts = AlertEngine.sortByUrgency(AlertEngine.build(
@@ -105,7 +115,13 @@ class DailyJobWorker(
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llanta?.stock,
             minimoLlantas = llanta?.stockMinimo?.coerceAtLeast(1) ?: AlertEngine.STOCK_LLANTAS_MINIMO,
-            missedByPlaca = missed
+            missedByPlaca = missed,
+            backup = BackupStatus(
+                driveLinked = AutoBackup.hasFolder(ctx),
+                lastDriveAt = AutoBackup.lastBackupAt(ctx),
+                lastEmailAt = prefs.getLong("last_email_backup_at", 0L),
+                hasData = units.isNotEmpty()
+            )
         ))
 
         // Resumen fijo de recordatorios pendientes (todos, también los ocultos en Inicio)
@@ -121,12 +137,7 @@ class DailyJobWorker(
             .map { it.titulo }
             .toMutableList()
 
-        if (mode == MODE_MORNING) {
-            val lastEmail = prefs.getLong("last_email_backup_at", 0L)
-            if (System.currentTimeMillis() - lastEmail > SEVEN_DAYS_MS) {
-                lines.add("Hace más de 7 días que no envías el respaldo a tu correo.")
-            }
-        }
+        // (El aviso de "enviar la copia al correo" ahora es un recordatorio más de la campana.)
 
         // El respaldo automático de la tarde se guarda aunque las notificaciones estén
         // silenciadas; solo se omite el AVISO en la barra de notificaciones.
@@ -143,13 +154,6 @@ class DailyJobWorker(
         }
 
         AlertMemory.markNotified(prefs, alerts.map { it.id })
-
-        // Nunca un respaldo vacío (sin motos): en un teléfono nuevo pisaría el respaldo bueno en Drive
-        if (mode == MODE_EVENING && units.isNotEmpty() && AutoBackup.hasFolder(ctx)) {
-            val email = prefs.getString("user_email", "") ?: ""
-            val json = BackupHelper.serializeToJson(repo.getFullBackupPayload(email))
-            AutoBackup.writeBackup(ctx, json)
-        }
     }
 
     companion object {

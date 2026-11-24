@@ -38,6 +38,10 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+        <!-- Vuelve a poner el aviso fijo de recordatorios si lo deslizan (solo se quita al resolver) -->
+        <receiver
+            android:name="com.example.util.RemindersDismissReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

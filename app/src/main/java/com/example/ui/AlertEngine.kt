@@ -7,8 +7,22 @@ enum class AlertType {
     REVISION,
     CONTRATO,
     STOCK,
-    DEUDA
+    DEUDA,
+    /** Copia de seguridad sin guardar (Drive) o sin enviar al correo. */
+    RESPALDO
 }
+
+/** Estado de las copias de seguridad, para avisarlo en la campana como un recordatorio más. */
+data class BackupStatus(
+    /** Hay un archivo de copia en Drive elegido en este teléfono. */
+    val driveLinked: Boolean,
+    /** Última copia guardada con éxito en Drive (ms), 0 = nunca. */
+    val lastDriveAt: Long,
+    /** Última vez que se envió la copia al correo (ms), 0 = nunca. */
+    val lastEmailAt: Long,
+    /** Hay datos que respaldar (al menos una moto). */
+    val hasData: Boolean
+)
 
 data class UrgentAlert(
     val id: String = java.util.UUID.randomUUID().toString(),
@@ -51,6 +65,11 @@ object AlertEngine {
     const val STOCK_ACEITE_MINIMO = 10
     const val HORA_COBROS = 17
     const val STOCK_LLANTAS_MINIMO = 2
+    private const val HORA_MS = 60 * 60 * 1000L
+    /** Sin copia en Drive desde hace más de esto → recordatorio (la app copia sola tras cada cambio). */
+    const val RESPALDO_DRIVE_HORAS = 48L
+    /** Sin enviar la copia al correo desde hace estos días → recordatorio. */
+    const val RESPALDO_CORREO_DIAS = 7L
 
     // Etapas de gravedad que forman parte de la clave para ocultar en Inicio
     const val STAGE_SEPARATOR = "#"
@@ -78,6 +97,7 @@ object AlertEngine {
         a.tipo == AlertType.DEUDA && a.unitPlaca != null -> 2
         a.tipo == AlertType.REVISION -> 3
         a.tipo == AlertType.DEUDA -> 4 // cobros_hoy (sin moto)
+        a.tipo == AlertType.RESPALDO -> 4
         else -> 5 // STOCK
     }
 
@@ -96,7 +116,9 @@ object AlertEngine {
         stockLlantas: Int? = null,
         minimoLlantas: Int = STOCK_LLANTAS_MINIMO,
         /** Días sin pago de cada moto (ver MissedPayments); la clave es la placa. */
-        missedByPlaca: Map<String, List<String>> = emptyMap()
+        missedByPlaca: Map<String, List<String>> = emptyMap(),
+        /** Copias de seguridad: si falta guardar, también es un recordatorio de la campana. */
+        backup: BackupStatus? = null
     ): List<UrgentAlert> = buildList {
         // [dismissed] se mantiene por compatibilidad (acepta id o hideKey); la app ya no lo usa:
         // los recordatorios solo desaparecen cuando se resuelven.
@@ -206,6 +228,42 @@ object AlertEngine {
                     hideKey = hideKeyFor("$FALTAS_PREFIX${u.placa}", faltas.last())
                 )
             )
+        }
+
+        // Copias de seguridad (antes solo salían en el aviso de la mañana; ahora están en la campana)
+        if (backup != null && backup.hasData) {
+            val horasSinCopia = if (backup.lastDriveAt > 0L) (now - backup.lastDriveAt) / HORA_MS else Long.MAX_VALUE
+            if (!backup.driveLinked || horasSinCopia >= RESPALDO_DRIVE_HORAS) {
+                addIfNew(
+                    UrgentAlert(
+                        id = "respaldo_drive",
+                        tipo = AlertType.RESPALDO,
+                        titulo = if (!backup.driveLinked) "Copia en Drive sin configurar" else "Copia en Drive sin guardar",
+                        descripcion = when {
+                            !backup.driveLinked -> "Tus datos solo están en este celular. Toca para elegir el archivo de copia en Drive."
+                            backup.lastDriveAt == 0L -> "Aún no se guardó ninguna copia. Toca y elige «Copiar ahora»."
+                            else -> "La última copia en Drive es de hace ${horasSinCopia / 24} día(s). Toca y elige «Copiar ahora»."
+                        },
+                        unitPlaca = null,
+                        hora = "Respaldo",
+                        hideKey = hideKeyFor("respaldo_drive", if (!backup.driveLinked) "sin_archivo" else "atrasada")
+                    )
+                )
+            }
+            val diasSinCorreo = if (backup.lastEmailAt > 0L) (now - backup.lastEmailAt) / (24 * HORA_MS) else Long.MAX_VALUE
+            if (diasSinCorreo >= RESPALDO_CORREO_DIAS) {
+                addIfNew(
+                    UrgentAlert(
+                        id = "respaldo_correo",
+                        tipo = AlertType.RESPALDO,
+                        titulo = "Envía la copia a tu correo",
+                        descripcion = if (backup.lastEmailAt == 0L) "Nunca se envió una copia al correo. Toca y elige «Enviar a mi correo»."
+                        else "Hace $diasSinCorreo días que no se envía. Toca y elige «Enviar a mi correo».",
+                        unitPlaca = null,
+                        hora = "Respaldo"
+                    )
+                )
+            }
         }
 
         if (stockLlantas != null && stockLlantas <= minimoLlantas) {

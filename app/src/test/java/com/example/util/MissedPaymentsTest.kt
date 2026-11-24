@@ -72,4 +72,29 @@ class MissedPaymentsTest {
         val m = MissedPayments.byPlaca(hoy, 10, "", emptyMap(), mapOf("A" to "2026-01-01"), emptyList())
         assertTrue(m.isEmpty())
     }
+
+    @Test
+    fun `fecha elegida por el dueno manda sobre la automatica`() {
+        // Control automático desde el 12, pero el dueño eligió avisar desde el 1
+        val f = MissedPayments.missedDays(hoy, 10, "2026-01-01", "2026-11-12", "2026-11-12", setOf("2026-11-05"), avisarDesde = "2026-11-01")
+        assertEquals(12, f.size) // del 1 al 13 menos el 5
+        assertEquals("2026-11-01", f.first())
+    }
+
+    @Test
+    fun `fecha elegida como maximo 6 meses atras`() {
+        val f = MissedPayments.missedDays(hoy, 10, "", "", null, emptySet(), avisarDesde = "2025-01-01")
+        assertEquals(MissedPayments.MAX_DIAS_ELEGIDO - 1, f.size) // hasta ayer
+    }
+
+    @Test
+    fun `por moto respeta la fecha elegida de cada una`() {
+        val m = MissedPayments.byPlaca(
+            today = hoy, hourOfDay = 10, desde = "2026-11-13", agregadas = emptyMap(),
+            units = mapOf("A" to "", "B" to ""), registros = emptyList(),
+            avisarDesde = mapOf("A" to "2026-11-10")
+        )
+        assertEquals(listOf("2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"), m["A"])
+        assertEquals(listOf("2026-11-13"), m["B"])
+    }
 }

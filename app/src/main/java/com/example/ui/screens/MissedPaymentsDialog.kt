@@ -16,7 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +41,21 @@ import com.example.util.MissedPayments
 fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
     val unit = state.selectedUnit ?: run { viewModel.closeDialog(); return }
     val faltas = state.missedByPlaca[unit.placa].orEmpty().reversed() // la más reciente arriba
+    val avisarDesde = state.avisarDesde[unit.placa]
+    var confirmarTodos by remember { mutableStateOf(false) }
+
+    if (confirmarTodos) {
+        AlertDialog(
+            onDismissRequest = { confirmarTodos = false },
+            title = { Text("¿Marcar los ${faltas.size} días como «No trabajó»?") },
+            text = { Text("No se cobran y dejan de avisarse. Úsalo para días en que la moto no salió.", fontSize = AppText.Body) },
+            confirmButton = {
+                Button(onClick = { confirmarTodos = false; viewModel.markAllMissedNotWorked(unit) }) { Text("Sí, marcar") }
+            },
+            dismissButton = { OutlinedButton(onClick = { confirmarTodos = false }) { Text("Volver") } }
+        )
+        return
+    }
 
     AlertDialog(
         onDismissRequest = { viewModel.closeDialog() },
@@ -55,6 +75,29 @@ fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.heightIn(max = 420.dp)
             ) {
+                // Desde qué fecha se avisan los pagos de ESTA moto (lo elige el dueño)
+                item(key = "avisar_desde") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        DatePickField(
+                            label = "Avisar pagos desde",
+                            value = avisarDesde ?: "",
+                            onPick = { viewModel.setPaymentAlertStart(unit, it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingText = if (avisarDesde == null) "Automático (desde que se registró la moto). Toca para elegir otra fecha."
+                            else "Elegida por ti (máximo 6 meses atrás)."
+                        )
+                        if (avisarDesde != null) {
+                            TextButton(onClick = { viewModel.setPaymentAlertStart(unit, null) }) {
+                                Text("Volver a automático", fontSize = AppText.Body)
+                            }
+                        }
+                        if (faltas.size >= 2) {
+                            OutlinedButton(onClick = { confirmarTodos = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Marcar todos «No trabajó»", fontSize = AppText.Body, maxLines = 1)
+                            }
+                        }
+                    }
+                }
                 items(faltas, key = { it }) { fecha ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),

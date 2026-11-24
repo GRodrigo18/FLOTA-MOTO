@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
@@ -58,6 +59,7 @@ private fun alertIcon(tipo: AlertType): ImageVector = when (tipo) {
     AlertType.REVISION -> Icons.Default.Build
     AlertType.CONTRATO -> Icons.Default.ElectricRickshaw
     AlertType.STOCK -> Icons.Default.ShoppingCart
+    AlertType.RESPALDO -> Icons.Default.CloudUpload
     AlertType.DEUDA -> Icons.Default.MonetizationOn
 }
 
@@ -86,6 +88,8 @@ fun openAlertTarget(alert: UrgentAlert, state: FleetUiState, viewModel: FleetVie
             else -> viewModel.onTabSelected(1)
         }
         AlertType.STOCK -> viewModel.onTabSelected(4)
+        // Copia sin guardar o sin enviar: se abre Respaldos
+        AlertType.RESPALDO -> viewModel.openDialog(DialogType.BACKUP_CLOUD)
     }
 }
 

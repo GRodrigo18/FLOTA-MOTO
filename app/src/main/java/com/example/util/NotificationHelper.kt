@@ -131,8 +131,18 @@ object NotificationHelper {
                         .build()
                 )
                 .setContentIntent(openAlertsPendingIntent(context, REMINDERS_NOTIFICATION_ID))
+                // Si la deslizan (Android 14+ lo permite), vuelve a aparecer: solo se quita al resolver
+                .setDeleteIntent(
+                    PendingIntent.getBroadcast(
+                        context,
+                        REMINDERS_NOTIFICATION_ID + 1,
+                        Intent(context, RemindersDismissReceiver::class.java),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
 
             NotificationManagerCompat.from(context).notify(REMINDERS_NOTIFICATION_ID, builder.build())
+            saveSummaryTitles(context, titles)
             true
         } catch (_: SecurityException) {
             false
@@ -142,10 +152,37 @@ object NotificationHelper {
     }
 
     fun cancelRemindersSummary(context: Context) {
+        saveSummaryTitles(context, emptyList())
         try {
             NotificationManagerCompat.from(context).cancel(REMINDERS_NOTIFICATION_ID)
         } catch (_: Exception) {
         }
+    }
+
+    private const val SUMMARY_PREFS = "moto_flota_prefs"
+    private const val KEY_SUMMARY_TITLES = "reminders_summary_titles"
+
+    /** Títulos del último aviso fijo (para volver a ponerlo si lo deslizan). */
+    private fun saveSummaryTitles(context: Context, titles: List<String>) {
+        val arr = org.json.JSONArray()
+        titles.forEach { arr.put(it) }
+        context.getSharedPreferences(SUMMARY_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_SUMMARY_TITLES, arr.toString()).apply()
+    }
+
+    internal fun lastSummaryTitles(context: Context): List<String> = try {
+        val raw = context.getSharedPreferences(SUMMARY_PREFS, Context.MODE_PRIVATE).getString(KEY_SUMMARY_TITLES, null)
+        if (raw == null) emptyList() else org.json.JSONArray(raw).let { a -> (0 until a.length()).map { a.getString(it) } }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** El aviso fijo fue deslizado: si siguen pendientes y los avisos están activos, se vuelve a poner. */
+    internal fun repostSummaryAfterDismiss(context: Context) {
+        val prefs = context.getSharedPreferences(SUMMARY_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("notifications_enabled", true)) return
+        val titles = lastSummaryTitles(context)
+        if (titles.isNotEmpty()) showRemindersSummary(context, titles)
     }
 
     fun hasNotificationPermission(context: Context): Boolean {

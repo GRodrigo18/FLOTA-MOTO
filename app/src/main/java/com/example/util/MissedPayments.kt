@@ -12,6 +12,9 @@ object MissedPayments {
     /** Como máximo se revisan los últimos 60 días (lo más viejo ya no se avisa). */
     const val MAX_DIAS = 60
 
+    /** Si el dueño elige a mano "avisar desde" una fecha, se permite ir hasta 6 meses atrás. */
+    const val MAX_DIAS_ELEGIDO = 183
+
     /** Desde qué hora el día de hoy ya cuenta como falta si no pagó (igual que el aviso de cobros). */
     const val HORA_CIERRE = 17
 
@@ -27,6 +30,8 @@ object MissedPayments {
      * @param desde la app empezó a llevar las faltas desde este día (no se inventan faltas de antes de usarla)
      * @param agregada día en que se registró la moto en la app, si se conoce
      * @param registradas días con pago o con "No trabajó"
+     * @param avisarDesde fecha elegida por el dueño para ESTA moto ("avisar pagos desde"): si está,
+     *   manda sobre [inicioContrato], [desde] y [agregada] (hasta [MAX_DIAS_ELEGIDO] días atrás)
      */
     fun missedDays(
         today: String,
@@ -34,17 +39,23 @@ object MissedPayments {
         inicioContrato: String,
         desde: String,
         agregada: String?,
-        registradas: Set<String>
+        registradas: Set<String>,
+        avisarDesde: String? = null
     ): List<String> {
         val hoy = FleetDates.normalize(today) ?: return emptyList()
-        val limite = FleetDates.plus(hoy, days = -(MAX_DIAS - 1)) ?: return emptyList()
-        // Un inicio de contrato en el futuro (renovación anticipada) no borra los días ya debidos
-        val inicio = listOfNotNull(
-            FleetDates.normalize(inicioContrato)?.takeIf { it <= hoy },
-            FleetDates.normalize(desde),
-            agregada?.let { FleetDates.normalize(it) },
-            limite
-        ).max()
+        val elegido = avisarDesde?.let { FleetDates.normalize(it) }
+        val inicio = if (elegido != null) {
+            maxOf(elegido, FleetDates.plus(hoy, days = -(MAX_DIAS_ELEGIDO - 1)) ?: return emptyList())
+        } else {
+            val limite = FleetDates.plus(hoy, days = -(MAX_DIAS - 1)) ?: return emptyList()
+            // Un inicio de contrato en el futuro (renovación anticipada) no borra los días ya debidos
+            listOfNotNull(
+                FleetDates.normalize(inicioContrato)?.takeIf { it <= hoy },
+                FleetDates.normalize(desde),
+                agregada?.let { FleetDates.normalize(it) },
+                limite
+            ).max()
+        }
         val fin = if (hourOfDay >= HORA_CIERRE) hoy else FleetDates.plus(hoy, days = -1) ?: return emptyList()
         if (inicio > fin) return emptyList()
         val out = mutableListOf<String>()
@@ -106,11 +117,12 @@ object MissedPayments {
         desde: String,
         agregadas: Map<String, String>,
         units: Map<String, String>,
-        registros: List<Pair<String, String>>
+        registros: List<Pair<String, String>>,
+        avisarDesde: Map<String, String> = emptyMap()
     ): Map<String, List<String>> {
         val porMoto = registros.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
         return units.mapValues { (placa, inicio) ->
-            missedDays(today, hourOfDay, inicio, desde.ifBlank { today }, agregadas[placa], porMoto[placa].orEmpty())
+            missedDays(today, hourOfDay, inicio, desde.ifBlank { today }, agregadas[placa], porMoto[placa].orEmpty(), avisarDesde[placa])
         }.filterValues { it.isNotEmpty() }
     }
 }
