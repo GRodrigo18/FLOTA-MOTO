@@ -1220,8 +1220,17 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
      * en Drive (así, después de recuperar en un teléfono nuevo, las copias siguen guardándose ahí).
      */
     fun restorePreview(context: Context, preview: BackupPreview, linkUri: android.net.Uri?) {
-        if (linkUri != null) setSyncDocument(context, linkUri, isNewFile = false)
-        restoreFromJson(preview.json)
+        viewModelScope.launch {
+            // Primero se recupera y DESPUÉS se enlaza el archivo: si se enlazara antes, la copia
+            // automática podría escribir los datos viejos de este celular encima de la copia buena.
+            val ok = restoreFromJsonNow(preview.json)
+            if (ok && linkUri != null) {
+                setSyncDocument(context, linkUri, isNewFile = false)
+                if (!AutoBackup.canWrite(context)) {
+                    showSnackbar("Datos recuperados. Ese archivo es solo de lectura: toca «Cambiar» en Respaldos para elegir dónde seguir copiando.")
+                }
+            }
+        }
     }
 
     fun restoreFromSyncFolder(context: Context) {
@@ -1236,17 +1245,22 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restoreFromJson(jsonString: String) {
-        viewModelScope.launch {
+        viewModelScope.launch { restoreFromJsonNow(jsonString) }
+    }
+
+    /** Recupera una copia y devuelve true si se recuperó. */
+    private suspend fun restoreFromJsonNow(jsonString: String): Boolean {
+        run {
             val payload = try {
                 BackupHelper.parseFromJson(jsonString)
             } catch (e: Exception) {
                 showSnackbar("Ese archivo no es una copia de MotoFlota.")
-                return@launch
+                return false
             }
             // Una copia sin motos borraría todo: se rechaza.
             if (payload.units.isEmpty()) {
                 showSnackbar("La copia está vacía (sin motos). No se cambió nada.")
-                return@launch
+                return false
             }
             try {
                 // Antes de reemplazar, se guarda lo que había (por si se eligió la copia equivocada).
@@ -1255,16 +1269,23 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                     BackupHelper.saveLocalBackupFile(getApplication(), BackupHelper.serializeToJson(actual))
                 }
                 repository.restoreFromBackup(payload)
-                // Copia traída de otro teléfono o de otra fecha: los días sin pagar se cuentan desde hoy
+                // Copia traída de otro teléfono o de otra fecha: los días sin pagar se cuentan desde hoy.
+                // Las fechas "avisar pagos desde" elegidas por el dueño se conservan para las motos que siguen.
+                val elegidas = MissedPrefs.avisarDesde(prefs)
+                val placas = payload.units.map { it.placa }.toSet()
                 MissedPrefs.clear(prefs)
                 MissedPrefs.setDesde(prefs, FleetDates.today())
+                elegidas.filterKeys { it in placas }.forEach { (placa, fecha) -> MissedPrefs.setAvisarDesde(prefs, placa, fecha) }
                 refreshMissedConfig()
                 markHistoryUsed()
                 showSnackbar("Datos recuperados: ${payload.units.size} motos.")
+                return true
             } catch (e: Exception) {
                 showSnackbar("No se pudo recuperar. Tus datos quedaron como estaban.")
+                return false
             }
         }
+        return false
     }
 
     // --- RECORDATORIOS: no se borran a mano, solo se quitan de Inicio ---

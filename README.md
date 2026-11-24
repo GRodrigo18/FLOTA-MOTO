@@ -91,6 +91,14 @@ el ingreso se bloquea 30 segundos.
 - Se pide el permiso de notificaciones (Android 13+) al ingresar, y se programan los dos avisos
   diarios automáticamente.
 
+## Cambios de la versión 1.7 (24 nov 2026)
+
+- **Avisar pagos desde la fecha que tú elijas, por moto**: en la ficha de la moto, botón **Pagos** (o tocando el aviso de días sin pagar) → **Avisar pagos desde**: se elige el día en el calendario (hasta 6 meses atrás). "Volver a automático" lo deja como antes. Si se elige una fecha vieja, **Marcar todos «No trabajó»** limpia de una vez los días en que la moto no salió.
+- **Todo está en la campana**: también los avisos de copia de seguridad ("Copia en Drive sin guardar", "Envía la copia a tu correo"), que antes solo salían como notificación suelta en la mañana. Al tocarlos se abre Respaldos.
+- **No se borran fácilmente**: el aviso fijo del celular, si se desliza, vuelve a aparecer al instante; solo se quita cuando ya no queda nada pendiente. En la app, los recordatorios solo se quitan al resolverlos (en Inicio se pueden ocultar, pero siguen en la campana).
+- **Recuperar copias desde Drive**: en Respaldos, **Recuperar mi copia de Drive** (la que se guarda sola) o **Buscar otra copia en Drive** (elegir el archivo en Drive, Descargas o un correo). Antes de reemplazar los datos se ve la fecha de la copia y cuántas motos, cobros y movimientos tiene, y se puede elegir seguir guardando las copias en ese archivo (útil en un celular nuevo).
+- Versión 8 / 1.7. Sin cambios en la base de datos (sigue en la versión 7).
+
 ## Cambios de la versión 1.6 (días sin pagar por moto, 14 nov 2026)
 
 - **Aviso de días sin pagar, por moto y con las fechas**: cada moto que debe cuota y no pagó tiene su propio recordatorio, por ejemplo "No pagó 2 días • Moto 3 — Sin pagar: jue 12 nov, vie 13 nov • S/ 70.00". El día de hoy cuenta desde las 17:00. Reemplaza al antiguo "Cobros pendientes hoy".

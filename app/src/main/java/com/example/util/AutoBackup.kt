@@ -39,6 +39,16 @@ object AutoBackup {
 
     private fun docUri(context: Context): Uri? = prefs(context).getString(KEY_DOC, null)?.let { Uri.parse(it) }
 
+    /** true si el archivo de copia elegido se puede escribir (si es solo de lectura, las copias fallarían). */
+    fun canWrite(context: Context): Boolean {
+        val doc = docUri(context) ?: return prefs(context).getString(KEY_TREE, null) != null
+        return try {
+            context.contentResolver.persistedUriPermissions.any { it.uri == doc && it.isWritePermission }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Usar un archivo (creado o elegido en Google Drive) como destino de la copia automática. */
     fun setDocument(context: Context, doc: Uri) {
         try {
