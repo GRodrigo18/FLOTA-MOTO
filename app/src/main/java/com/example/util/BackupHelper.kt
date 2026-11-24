@@ -32,7 +32,9 @@ data class FleetBackupPayload(
     val inventoryItems: List<InventoryItemEntity>,
     val maintenanceTasks: List<MaintenanceTaskEntity>,
     // Lotes de compra de aceite/llantas (antes no se respaldaban y se perdían al restaurar)
-    val inventoryBatches: List<InventoryBatchEntity> = emptyList()
+    val inventoryBatches: List<InventoryBatchEntity> = emptyList(),
+    // Fechas "avisar pagos desde" elegidas por el dueño (placa → yyyy-MM-dd), v1.7
+    val avisarDesde: Map<String, String> = emptyMap()
 )
 
 object BackupHelper {
@@ -207,6 +209,10 @@ object BackupHelper {
             batchesArray.put(obj)
         }
         root.put("inventoryBatches", batchesArray)
+
+        val avisar = JSONObject()
+        payload.avisarDesde.forEach { (placa, fecha) -> avisar.put(placa, fecha) }
+        root.put("avisarDesde", avisar)
         root.put("formatVersion", 2)
 
         return root.toString(2)
@@ -412,7 +418,10 @@ object BackupHelper {
             financeMovements = financeMovements,
             inventoryItems = inventoryItems,
             maintenanceTasks = maintenanceTasks,
-            inventoryBatches = inventoryBatches
+            inventoryBatches = inventoryBatches,
+            avisarDesde = root.optJSONObject("avisarDesde")?.let { o ->
+                o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }
+            } ?: emptyMap()
         )
     }
 

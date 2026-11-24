@@ -101,7 +101,8 @@ fun BackupCloudDialog(
             viewModel.previewFileBackup(context, uri) { p ->
                 loading = false
                 previewUri = uri
-                linkPicked = true
+                // Solo se propone enlazar el archivo si este celular aún no guarda copias en Drive
+                linkPicked = folderName == null
                 preview = p
             }
         }

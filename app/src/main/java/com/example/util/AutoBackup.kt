@@ -39,6 +39,16 @@ object AutoBackup {
 
     private fun docUri(context: Context): Uri? = prefs(context).getString(KEY_DOC, null)?.let { Uri.parse(it) }
 
+    /** true si [uri] (un archivo elegido) se puede escribir: se intenta tomar el permiso de escritura. */
+    fun isWritable(context: Context, uri: Uri): Boolean = try {
+        context.contentResolver.takePersistableUriPermission(
+            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     /** true si el archivo de copia elegido se puede escribir (si es solo de lectura, las copias fallarían). */
     fun canWrite(context: Context): Boolean {
         val doc = docUri(context) ?: return prefs(context).getString(KEY_TREE, null) != null

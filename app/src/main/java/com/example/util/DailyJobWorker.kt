@@ -35,8 +35,9 @@ class DailyJobWorker(
         } catch (_: Exception) {
             // No se reintenta de inmediato: la tarea volverá a correr en su próximo horario.
         } finally {
-            // Pase lo que pase arriba, siempre se programa el aviso de mañana a la misma hora.
-            rescheduleNext(ctx, mode)
+            // Pase lo que pase arriba, siempre se programa el aviso de mañana a la misma hora
+            // (la actualización del aviso fijo es de una sola vez y no se reprograma).
+            if (mode != MODE_SUMMARY) rescheduleNext(ctx, mode)
         }
         return Result.success()
     }
@@ -130,6 +131,8 @@ class DailyJobWorker(
         } else {
             NotificationHelper.cancelRemindersSummary(ctx)
         }
+        // Solo había que poner al día el aviso fijo (lo deslizaron): no se manda nada más
+        if (mode == MODE_SUMMARY) return
 
         // En la mañana se omite "revisión del mes" (es un aviso mensual, no diario)
         val lines = alerts
@@ -160,6 +163,8 @@ class DailyJobWorker(
         const val KEY_MODE = "mode"
         const val MODE_MORNING = "morning"
         const val MODE_EVENING = "evening"
+        /** Recalcular y volver a poner el aviso fijo (cuando lo deslizan). */
+        const val MODE_SUMMARY = "summary"
         private const val SEVEN_DAYS_MS = 7L * 24 * 60 * 60 * 1000
     }
 }

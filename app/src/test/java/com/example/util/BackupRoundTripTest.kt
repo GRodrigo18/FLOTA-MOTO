@@ -60,4 +60,18 @@ class BackupRoundTripTest {
         assertEquals(0.0, back.detailedMaintenances.single().costoCablesCambio, 0.001)
         assertEquals(0, back.inventoryBatches.size)
     }
+
+    @Test
+    fun `las fechas avisar pagos desde viajan en la copia`() {
+        val payload = FleetBackupPayload(
+            exportDate = "2026-11-24", userEmail = "", units = emptyList(), dailyPayments = emptyList(),
+            debtRecords = emptyList(), detailedMaintenances = emptyList(), unitExpenses = emptyList(),
+            financeMovements = emptyList(), inventoryItems = emptyList(), maintenanceTasks = emptyList(),
+            avisarDesde = mapOf("ABC123" to "2026-10-01")
+        )
+        val back = BackupHelper.parseFromJson(BackupHelper.serializeToJson(payload))
+        org.junit.Assert.assertEquals(mapOf("ABC123" to "2026-10-01"), back.avisarDesde)
+        // Una copia vieja (sin el campo) se lee igual
+        org.junit.Assert.assertEquals(emptyMap<String, String>(), BackupHelper.parseFromJson("{\"units\":[]}").avisarDesde)
+    }
 }

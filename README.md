@@ -97,6 +97,8 @@ el ingreso se bloquea 30 segundos.
 - **Todo está en la campana**: también los avisos de copia de seguridad ("Copia en Drive sin guardar", "Envía la copia a tu correo"), que antes solo salían como notificación suelta en la mañana. Al tocarlos se abre Respaldos.
 - **No se borran fácilmente**: el aviso fijo del celular, si se desliza, vuelve a aparecer al instante; solo se quita cuando ya no queda nada pendiente. En la app, los recordatorios solo se quitan al resolverlos (en Inicio se pueden ocultar, pero siguen en la campana).
 - **Recuperar copias desde Drive**: en Respaldos, **Recuperar mi copia de Drive** (la que se guarda sola) o **Buscar otra copia en Drive** (elegir el archivo en Drive, Descargas o un correo). Antes de reemplazar los datos se ve la fecha de la copia y cuántas motos, cobros y movimientos tiene, y se puede elegir seguir guardando las copias en ese archivo (útil en un celular nuevo).
+- **Revisado por un agente de pruebas independiente** (23 pruebas nuevas) y corregido: paradas largas en el taller ya no vuelven como días sin pagar; al elegir otro archivo en Drive la copia se guarda de inmediato; no aparece "copia sin guardar" falso tras recuperar; un archivo de solo lectura (adjunto de correo) no reemplaza el archivo de copias; solo el administrador cambia la fecha de avisos o marca todos «No trabajó»; las fechas elegidas viajan en la copia de seguridad; archivos que no son copias se rechazan antes de preguntar.
+- 164 pruebas automáticas, Lint sin errores.
 - Versión 8 / 1.7. Sin cambios en la base de datos (sigue en la versión 7).
 
 ## Cambios de la versión 1.6 (días sin pagar por moto, 14 nov 2026)

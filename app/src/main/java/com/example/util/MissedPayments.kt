@@ -74,7 +74,8 @@ object MissedPayments {
     fun daysToExcuse(desde: String, hasta: String, registradas: Set<String>): List<String> {
         val b = FleetDates.normalize(hasta) ?: return emptyList()
         val a0 = FleetDates.normalize(desde) ?: return emptyList()
-        val limite = FleetDates.plus(b, days = -(MAX_DIAS - 1)) ?: return emptyList()
+        // Hasta el máximo que se puede avisar (6 meses si el dueño eligió una fecha vieja)
+        val limite = FleetDates.plus(b, days = -(MAX_DIAS_ELEGIDO - 1)) ?: return emptyList()
         val a = maxOf(a0, limite)
         if (a > b) return emptyList()
         val out = mutableListOf<String>()

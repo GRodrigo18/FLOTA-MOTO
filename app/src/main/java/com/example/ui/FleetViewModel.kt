@@ -19,6 +19,7 @@ import com.example.util.AlertMemory
 import com.example.util.AppUser
 import com.example.util.AutoBackup
 import com.example.util.DriverMessages
+import com.example.util.FleetBackupPayload
 import com.example.util.FleetDates
 import com.example.util.MissedPayments
 import com.example.util.MissedPrefs
@@ -657,6 +658,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
      * (hasta 6 meses atrás). [fecha] = null vuelve a "automático" (desde que se registró la moto).
      */
     fun setPaymentAlertStart(unit: FleetUnitEntity, fecha: String?) {
+        // Solo el administrador: si no, cualquiera podría apagar los avisos de pago
+        if (!requireAdmin()) return
         val hoy = FleetDates.today()
         val normal = fecha?.let { FleetDates.normalize(it) }
         if (fecha != null && normal == null) {
@@ -680,6 +683,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** El dueño marca todos los días pendientes de una moto como "No trabajó" (por ejemplo, días viejos). */
     fun markAllMissedNotWorked(unit: FleetUnitEntity) {
+        if (!requireAdmin()) return
         val dias = uiState.value.missedByPlaca[unit.placa].orEmpty()
         if (dias.isEmpty()) return
         viewModelScope.launch {
@@ -740,12 +744,14 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun autoBackupToFolder() {
         val app = getApplication<Application>()
         if (!AutoBackup.hasFolder(app)) return
-        val payload = repository.getFullBackupPayload(_userEmail.value)
+        val payload = fullBackupPayload()
         // Nunca se guarda un respaldo vacío: en un teléfono nuevo pisaría el respaldo bueno de hoy.
         if (payload.units.isEmpty()) return
         // Si nada cambió desde la última copia, no se vuelve a escribir en Drive
         val huella = payload.copy(exportDate = "").hashCode()
-        if (huella == lastBackupFingerprint) return
+        // Mismos datos que la última copia: no se reescribe, salvo que esa copia ya tenga más de un día
+        val reciente = System.currentTimeMillis() - AutoBackup.lastBackupAt(app) < 24 * 60 * 60 * 1000L
+        if (huella == lastBackupFingerprint && reciente) return
         val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AutoBackup.writeBackup(app, BackupHelper.serializeToJson(payload)) }
         refreshBackupStatus()
         if (ok) lastBackupFingerprint = huella
@@ -996,7 +1002,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exportAndEmailBackup(context: Context) {
         viewModelScope.launch {
-            val payload = repository.getFullBackupPayload(_userEmail.value)
+            val payload = fullBackupPayload()
             val json = BackupHelper.serializeToJson(payload)
             val summary = """
                 • Motos registradas: ${payload.units.size}
@@ -1005,7 +1011,17 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 • Movimientos financieros: ${payload.financeMovements.size}
                 • Repuestos en almacén: ${payload.inventoryItems.size}
             """.trimIndent()
-            BackupHelper.sendBackupViaEmail(context, _userEmail.value, json, summary)
+            // Si no se pudo abrir el correo, no se marca como enviado (el recordatorio sigue)
+            val abierto = try {
+                BackupHelper.sendBackupViaEmail(context, _userEmail.value, json, summary)
+                true
+            } catch (_: Exception) {
+                false
+            }
+            if (!abierto) {
+                showSnackbar("No se pudo abrir el correo.")
+                return@launch
+            }
             val nowStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
             _lastCloudSync.value = "Enviado a correo ($nowStr)"
             prefs.edit()
@@ -1019,7 +1035,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exportAndShareBackup(context: Context) {
         viewModelScope.launch {
-            val payload = repository.getFullBackupPayload(_userEmail.value)
+            val payload = fullBackupPayload()
             val json = BackupHelper.serializeToJson(payload)
             val summary = "Motos: ${payload.units.size} | Pagos: ${payload.dailyPayments.size} | Taller: ${payload.detailedMaintenances.size}"
             BackupHelper.shareBackupToGoogleDriveOrFiles(context, json, summary)
@@ -1031,7 +1047,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveLocalBackup(context: Context) {
         viewModelScope.launch {
-            val payload = repository.getFullBackupPayload(_userEmail.value)
+            val payload = fullBackupPayload()
             val json = BackupHelper.serializeToJson(payload)
             val file = BackupHelper.saveLocalBackupFile(context, json)
             val nowStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
@@ -1132,6 +1148,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     /** Archivo de copia en Google Drive (creado con "Guardar copia en Google Drive" o elegido si ya existía). */
     fun setSyncDocument(context: Context, docUri: android.net.Uri, isNewFile: Boolean) {
         AutoBackup.setDocument(context, docUri)
+        // Archivo distinto: la próxima copia se escribe sí o sí (aunque los datos no hayan cambiado)
+        lastBackupFingerprint = null
         _syncReady.value = isSyncConfigured()
         refreshBackupStatus()
         // Archivo nuevo: se llena de inmediato. Archivo que ya existía: NO se toca, porque puede
@@ -1141,13 +1159,14 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearSyncFolder(context: Context) {
         AutoBackup.clearFolder(context)
+        lastBackupFingerprint = null
         _syncReady.value = isSyncConfigured()
         refreshBackupStatus()
     }
 
     fun backupToSyncFolderNow(context: Context) {
         viewModelScope.launch {
-            val payload = repository.getFullBackupPayload(_userEmail.value)
+            val payload = fullBackupPayload()
             if (payload.units.isEmpty()) {
                 showSnackbar("No hay motos registradas: no se guarda un respaldo vacío.")
                 return@launch
@@ -1161,6 +1180,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    /** Todo lo que va en la copia: la base de datos y las fechas "avisar pagos desde". */
+    private suspend fun fullBackupPayload(): FleetBackupPayload =
+        repository.getFullBackupPayload(_userEmail.value).copy(avisarDesde = MissedPrefs.avisarDesde(prefs))
 
     /** Lo que hay dentro de una copia, para mostrarlo ANTES de recuperarla. */
     data class BackupPreview(
@@ -1176,6 +1199,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         if (json.isNullOrBlank()) return null
         return try {
             val p = BackupHelper.parseFromJson(json)
+            if (p.units.isEmpty()) return null // no es una copia de MotoFlota, o está vacía
             BackupPreview(
                 json = json,
                 fecha = p.exportDate,
@@ -1204,9 +1228,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val json = try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        // Una copia real pesa unos KB; un archivo enorme no es una copia (y podría cerrar la app)
+                        val bytes = input.readNBytesCompat(MAX_BACKUP_BYTES + 1)
+                        if (bytes.size > MAX_BACKUP_BYTES) null else bytes.toString(Charsets.UTF_8)
+                    }
                 }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 null
             }
             val preview = buildPreview(json, "Archivo elegido")
@@ -1225,9 +1253,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             // automática podría escribir los datos viejos de este celular encima de la copia buena.
             val ok = restoreFromJsonNow(preview.json)
             if (ok && linkUri != null) {
-                setSyncDocument(context, linkUri, isNewFile = false)
-                if (!AutoBackup.canWrite(context)) {
-                    showSnackbar("Datos recuperados. Ese archivo es solo de lectura: toca «Cambiar» en Respaldos para elegir dónde seguir copiando.")
+                if (AutoBackup.isWritable(context, linkUri)) {
+                    setSyncDocument(context, linkUri, isNewFile = false)
+                    // Se guarda de inmediato la copia en ese archivo (y el aviso de copia queda al día)
+                    autoBackupToFolder()
+                } else {
+                    showSnackbar("Datos recuperados. Ese archivo es solo de lectura: las copias siguen guardándose donde estaban.")
                 }
             }
         }
@@ -1264,7 +1295,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
             try {
                 // Antes de reemplazar, se guarda lo que había (por si se eligió la copia equivocada).
-                val actual = repository.getFullBackupPayload(_userEmail.value)
+                val actual = fullBackupPayload()
                 if (actual.units.isNotEmpty()) {
                     BackupHelper.saveLocalBackupFile(getApplication(), BackupHelper.serializeToJson(actual))
                 }
@@ -1275,7 +1306,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 val placas = payload.units.map { it.placa }.toSet()
                 MissedPrefs.clear(prefs)
                 MissedPrefs.setDesde(prefs, FleetDates.today())
-                elegidas.filterKeys { it in placas }.forEach { (placa, fecha) -> MissedPrefs.setAvisarDesde(prefs, placa, fecha) }
+                // Las de la copia mandan (así se recuperan también en un celular nuevo)
+                (elegidas + payload.avisarDesde).filterKeys { it in placas }
+                    .forEach { (placa, fecha) -> MissedPrefs.setAvisarDesde(prefs, placa, fecha) }
                 refreshMissedConfig()
                 markHistoryUsed()
                 showSnackbar("Datos recuperados: ${payload.units.size} motos.")
@@ -2027,7 +2060,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
         if (!requireAdmin()) return
         viewModelScope.launch {
             try {
-                val antes = repository.getFullBackupPayload(_userEmail.value)
+                val antes = fullBackupPayload()
                 if (antes.units.isNotEmpty()) {
                     BackupHelper.saveLocalBackupFile(getApplication(), BackupHelper.serializeToJson(antes))
                 }
@@ -2273,4 +2306,21 @@ object TourNews {
 
     /** true si un paso con [since] se muestra; [sinceVersion] = -1 muestra todos. */
     fun isStepShown(since: Int, sinceVersion: Int): Boolean = since > sinceVersion
+}
+
+/** Límite de tamaño de un archivo de copia que se acepta para recuperar (20 MB). */
+private const val MAX_BACKUP_BYTES = 20 * 1024 * 1024
+
+/** Lee como máximo [limit] bytes (compatible con Android 7, que no tiene readNBytes). */
+private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(16 * 1024)
+    var total = 0
+    while (total < limit) {
+        val n = read(buf, 0, minOf(buf.size, limit - total))
+        if (n < 0) break
+        out.write(buf, 0, n)
+        total += n
+    }
+    return out.toByteArray()
 }

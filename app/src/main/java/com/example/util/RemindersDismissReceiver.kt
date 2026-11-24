@@ -10,6 +10,17 @@ import android.content.Intent
  */
 class RemindersDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        NotificationHelper.repostSummaryAfterDismiss(context.applicationContext)
+        val app = context.applicationContext
+        // Se vuelve a poner al instante con lo último conocido...
+        NotificationHelper.repostSummaryAfterDismiss(app)
+        // ...y se recalcula enseguida con los datos de ahora (por si algo ya se resolvió)
+        try {
+            val request = androidx.work.OneTimeWorkRequestBuilder<DailyJobWorker>()
+                .setInputData(androidx.work.workDataOf(DailyJobWorker.KEY_MODE to DailyJobWorker.MODE_SUMMARY))
+                .build()
+            androidx.work.WorkManager.getInstance(app)
+                .enqueueUniqueWork("moto_flota_resumen", androidx.work.ExistingWorkPolicy.REPLACE, request)
+        } catch (_: Exception) {
+        }
     }
 }
