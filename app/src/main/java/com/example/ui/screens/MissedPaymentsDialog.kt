@@ -125,6 +125,10 @@ fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
                                     modifier = Modifier.weight(1f)
                                 ) { Text("No trabajó", maxLines = 1, fontSize = AppText.Body) }
                             }
+                            // Abrir el cobro diario en ese día (para registrar ahí el pago u otro monto)
+                            TextButton(onClick = { viewModel.goToPaymentsOn(fecha) }) {
+                                Text("Ver ese día en Pagos ›", fontSize = AppText.Body)
+                            }
                         }
                     }
                 }

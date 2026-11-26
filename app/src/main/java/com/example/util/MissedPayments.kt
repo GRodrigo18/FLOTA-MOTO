@@ -122,8 +122,31 @@ object MissedPayments {
         avisarDesde: Map<String, String> = emptyMap()
     ): Map<String, List<String>> {
         val porMoto = registros.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+        val hoy = FleetDates.normalize(today) ?: return emptyMap()
         return units.mapValues { (placa, inicio) ->
-            missedDays(today, hourOfDay, inicio, desde.ifBlank { today }, agregadas[placa], porMoto[placa].orEmpty(), avisarDesde[placa])
+            val regs = porMoto[placa].orEmpty()
+            missedDays(
+                today, hourOfDay,
+                inicioContrato = "",
+                desde = autoStart(hoy, inicio, agregadas[placa], regs),
+                agregada = null,
+                registradas = regs,
+                avisarDesde = avisarDesde[placa]
+            )
         }.filterValues { it.isNotEmpty() }
+    }
+
+    /**
+     * Desde cuándo se revisan los pagos de una moto (si el dueño no eligió una fecha):
+     * - desde su PRIMER cobro registrado en la app (desde ahí, todo día sin registro es un día que no pagó);
+     * - si aún no tiene cobros, desde el inicio de su contrato (si ya empezó) o desde que se registró.
+     * [desde] global de versiones anteriores ya no se usa: el cliente quiere ver los días atrasados.
+     */
+    fun autoStart(hoy: String, inicioContrato: String, agregada: String?, registradas: Set<String>): String {
+        registradas.mapNotNull { FleetDates.normalize(it) }.filter { it <= hoy }.minOrNull()?.let { return it }
+        // Sin cobros: desde el inicio del contrato (si todavía no empieza, no hay nada que avisar)
+        FleetDates.normalize(inicioContrato)?.let { return it }
+        agregada?.let { FleetDates.normalize(it) }?.takeIf { it <= hoy }?.let { return it }
+        return hoy
     }
 }

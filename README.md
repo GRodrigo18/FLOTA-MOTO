@@ -91,6 +91,14 @@ el ingreso se bloquea 30 segundos.
 - Se pide el permiso de notificaciones (Android 13+) al ingresar, y se programan los dos avisos
   diarios automáticamente.
 
+## Cambios de la versión 1.8 (26 nov 2026) — pagos atrasados con fechas
+
+- **Antes solo salía el día de hoy**: los días sin pagar se contaban desde el día en que se instaló la versión, así que al registrar pagos de días anteriores no aparecían los atrasados. Ahora cada moto se revisa **desde su primer cobro registrado** (o, si aún no tiene cobros, desde el inicio de su contrato), como máximo 60 días atrás, o desde la fecha que elija el dueño en «Avisar pagos desde».
+- Ejemplo: si se registran los pagos del 1, 2, 5 y 6, la campana avisa "No pagó 2 días • Moto 3 — mar 3 nov, mié 4 nov • S/ 70.00".
+- **Pagos › Deudas › «Cuotas sin pagar»**: lista cada moto con TODAS las fechas que no pagó y el total. Al tocarla se marca cada día «Pagó» o «No trabajó», o **«Ver ese día en Pagos»** abre el cobro diario en esa fecha para registrarlo ahí. Al registrar el pago, esa fecha desaparece sola de la campana y de la lista.
+- Guía: un paso nuevo de NOVEDADES.
+- Versión 9 / 1.8. Sin cambios en la base de datos. 165 pruebas automáticas, Lint sin errores.
+
 ## Cambios de la versión 1.7 (24 nov 2026)
 
 - **Avisar pagos desde la fecha que tú elijas, por moto**: en la ficha de la moto, botón **Pagos** (o tocando el aviso de días sin pagar) → **Avisar pagos desde**: se elige el día en el calendario (hasta 6 meses atrás). "Volver a automático" lo deja como antes. Si se elige una fecha vieja, **Marcar todos «No trabajó»** limpia de una vez los días en que la moto no salió.

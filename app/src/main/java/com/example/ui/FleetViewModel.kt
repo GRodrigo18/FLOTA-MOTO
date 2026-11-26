@@ -214,9 +214,9 @@ data class FleetUiState(
             avisarDesde = avisarDesde,
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
-            // El inicio del contrato NO se usa: al renovar se mueve y borraría días ya debidos.
-            // Se cuenta desde que se registró la moto (o desde que se usa esta versión).
-            }.associate { it.placa to "" },
+            // Se cuenta desde el primer cobro registrado de cada moto (o, si aún no tiene, desde el
+            // inicio de su contrato): así salen también los días atrasados, no solo el de hoy.
+            }.associate { it.placa to it.inicioContrato },
             registros = dailyPayments.map { it.unitPlaca to it.fecha }
         )
     }
@@ -679,6 +679,13 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             else "${unit.nombreMoto}: se avisan los pagos desde el ${FleetDates.pretty(final)}." +
                 if (normal != final) " (máximo 6 meses atrás)" else ""
         )
+    }
+
+    /** Abre la pestaña Pagos en [fecha] (desde la lista de días sin pagar). */
+    fun goToPaymentsOn(fecha: String) {
+        closeDialog()
+        onTabSelected(1)
+        FleetDates.normalize(fecha)?.let { _selectedDate.value = it }
     }
 
     /** El dueño marca todos los días pendientes de una moto como "No trabajó" (por ejemplo, días viejos). */
@@ -2287,7 +2294,7 @@ data class Tuple7<A, B, C, D, E, F, G>(val v1: A, val v2: B, val v3: C, val v4: 
  * 14 = v1.4, 15 = v1.5); en modo novedades se muestran los pasos con since > versión vista.
  */
 object TourNews {
-    const val CURRENT_VERSION = 17
+    const val CURRENT_VERSION = 18
     const val KEY_SEEN_VERSION = "tour_news_seen_version"
     const val KEY_TOUR_DONE = "has_completed_interactive_tour_v2"
     const val OLD_KEY_V14_SEEN = "tour_news_v14_seen"

@@ -58,18 +58,30 @@ class MissedPaymentsTest {
     }
 
     @Test
-    fun `por moto usa los registros de cada una`() {
+    fun `cada moto se revisa desde su primer cobro registrado`() {
+        // A: cobros el 10 y el 13 → no pagó el 11 ni el 12. B: primer cobro el 13 → al día.
         val m = MissedPayments.byPlaca(
-            today = hoy, hourOfDay = 10, desde = "2026-11-12", agregadas = emptyMap(),
+            today = hoy, hourOfDay = 10, desde = "", agregadas = emptyMap(),
             units = mapOf("A" to "2026-01-01", "B" to "2026-01-01"),
-            registros = listOf("A" to "2026-11-12", "A" to "2026-11-13", "B" to "2026-11-13")
+            registros = listOf("A" to "2026-11-10", "A" to "2026-11-13", "B" to "2026-11-13")
         )
-        assertEquals(mapOf("B" to listOf("2026-11-12")), m)
+        assertEquals(mapOf("A" to listOf("2026-11-11", "2026-11-12")), m)
     }
 
     @Test
-    fun `sin fecha de control no inventa faltas viejas`() {
-        val m = MissedPayments.byPlaca(hoy, 10, "", emptyMap(), mapOf("A" to "2026-01-01"), emptyList())
+    fun `pagos registrados avanzando dias dejan ver los dias atrasados`() {
+        // Caso del cliente: registra pagos del 1, 2, 5 y 6; el 3 y el 4 no pagó → el aviso los nombra
+        val m = MissedPayments.byPlaca(
+            today = "2026-11-07", hourOfDay = 10, desde = "", agregadas = emptyMap(),
+            units = mapOf("A" to "2026-11-01"),
+            registros = listOf("2026-11-01", "2026-11-02", "2026-11-05", "2026-11-06").map { "A" to it }
+        )
+        assertEquals(listOf("2026-11-03", "2026-11-04"), m["A"])
+    }
+
+    @Test
+    fun `contrato que aun no empieza no tiene dias sin pagar`() {
+        val m = MissedPayments.byPlaca(hoy, 18, "", emptyMap(), mapOf("A" to "2026-12-01"), emptyList())
         assertTrue(m.isEmpty())
     }
 
@@ -91,7 +103,7 @@ class MissedPaymentsTest {
     fun `por moto respeta la fecha elegida de cada una`() {
         val m = MissedPayments.byPlaca(
             today = hoy, hourOfDay = 10, desde = "2026-11-13", agregadas = emptyMap(),
-            units = mapOf("A" to "", "B" to ""), registros = emptyList(),
+            units = mapOf("A" to "", "B" to "2026-11-13"), registros = emptyList(),
             avisarDesde = mapOf("A" to "2026-11-10")
         )
         assertEquals(listOf("2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"), m["A"])

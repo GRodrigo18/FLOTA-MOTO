@@ -91,7 +91,7 @@ class DailyJobWorker(
             agregadas = MissedPrefs.agregadas(prefs),
             units = units.filter {
                 FleetRules.debeCuota(it.estado) && it.cliente.isNotBlank() && !it.cliente.equals("Sin asignar", ignoreCase = true)
-            }.associate { it.placa to "" }, // igual que la app: no se usa el inicio del contrato
+            }.associate { it.placa to it.inicioContrato }, // igual que la app
             registros = payments.map { it.unitPlaca to it.fecha },
             avisarDesde = MissedPrefs.avisarDesde(prefs)
         )

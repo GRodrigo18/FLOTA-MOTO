@@ -84,9 +84,10 @@ class MissedPaymentsEdgeTest {
     }
 
     @Test
-    fun `byPlaca con desde vacio cuenta solo hoy desde las 17`() {
-        val m = MissedPayments.byPlaca(hoy, 18, "", emptyMap(), mapOf("A" to "2026-01-01"), emptyList())
-        assertEquals(mapOf("A" to listOf(hoy)), m)
+    fun `byPlaca sin cobros cuenta desde el inicio del contrato`() {
+        // v1.8: sin cobros registrados se cuenta desde el inicio del contrato (máx. 60 días)
+        val m = MissedPayments.byPlaca(hoy, 18, "", emptyMap(), mapOf("A" to "2026-11-10"), emptyList())
+        assertEquals(mapOf("A" to listOf("2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", hoy)), m)
     }
 
     @Test
@@ -94,7 +95,8 @@ class MissedPaymentsEdgeTest {
         val m = MissedPayments.byPlaca(
             today = hoy, hourOfDay = 10, desde = "2026-11-12",
             agregadas = mapOf("B" to "2026-11-13"),
-            units = mapOf("A" to "2026-01-01", "B" to "2026-01-01"),
+            // B sin contrato iniciado: se cuenta desde que se registró
+            units = mapOf("A" to "2026-01-01", "B" to ""),
             registros = listOf("Z" to "2026-11-12", "Z" to "2026-11-13", "A" to "2026-11-12")
         )
         assertEquals(mapOf("A" to listOf("2026-11-13"), "B" to listOf("2026-11-13")), m)

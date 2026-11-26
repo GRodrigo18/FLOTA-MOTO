@@ -207,6 +207,60 @@ internal fun DebtManagementTabContent(
         }
 
         // Título de Unidades
+        // Cuotas sin pagar: cada moto con las FECHAS que no pagó (se quitan al registrar el pago
+        // de ese día en Pagos, o con «Pagó» / «No trabajó» al tocar la moto)
+        val conFaltas = state.units.filter { !state.missedByPlaca[it.placa].isNullOrEmpty() }
+        if (conFaltas.isNotEmpty()) {
+            item(key = "missed_header") {
+                Text(
+                    text = "CUOTAS SIN PAGAR (${conFaltas.sumOf { state.missedByPlaca[it.placa]!!.size }} días)",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = DangerRedText, letterSpacing = 1.sp)
+                )
+            }
+            items(conFaltas, key = { "missed_${it.id}" }) { unit ->
+                val dias = state.missedByPlaca[unit.placa].orEmpty()
+                Surface(
+                    onClick = { viewModel.openDialogFromAlert(DialogType.MISSED_PAYMENTS, unit) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = DangerRedBg,
+                    border = BorderStroke(1.dp, DangerRedText.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${unit.nombreMoto} • ${unit.placa}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = AppText.Title,
+                                color = DangerRedText,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "S/ ${"%.2f".format(unit.cuotaDiaria * dias.size)}",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = AppText.Title,
+                                color = DangerRedText
+                            )
+                        }
+                        Text(
+                            "${dias.size} día${if (dias.size == 1) "" else "s"} sin pagar • ${unit.cliente}",
+                            fontSize = AppText.Body,
+                            color = DangerRedText
+                        )
+                        // Todas las fechas, de la más reciente a la más antigua
+                        Text(
+                            dias.reversed().joinToString(" · ") { com.example.util.MissedPayments.label(it) },
+                            fontSize = AppText.Body,
+                            color = DangerRedText.copy(alpha = 0.9f)
+                        )
+                        Text("Toca para marcar «Pagó» o «No trabajó»", fontSize = AppText.Small, color = DangerRedText.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+
         item(key = "debt_header_units") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
