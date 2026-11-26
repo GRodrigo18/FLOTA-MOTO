@@ -138,15 +138,31 @@ object MissedPayments {
 
     /**
      * Desde cuándo se revisan los pagos de una moto (si el dueño no eligió una fecha):
-     * - desde su PRIMER cobro registrado en la app (desde ahí, todo día sin registro es un día que no pagó);
-     * - si aún no tiene cobros, desde el inicio de su contrato (si ya empezó) o desde que se registró.
+     * - si se sabe el día desde el que la app lleva sus cobros ([agregada]), desde ese día o desde su
+     *   primer cobro si es anterior: así pagar el día más reciente NO borra los días viejos sin pagar;
+     * - si no, desde su PRIMER cobro registrado en la app;
+     * - si aún no tiene cobros, desde el inicio de su contrato (si todavía no empieza, no hay nada que avisar).
      * [desde] global de versiones anteriores ya no se usa: el cliente quiere ver los días atrasados.
      */
     fun autoStart(hoy: String, inicioContrato: String, agregada: String?, registradas: Set<String>): String {
-        registradas.mapNotNull { FleetDates.normalize(it) }.filter { it <= hoy }.minOrNull()?.let { return it }
-        // Sin cobros: desde el inicio del contrato (si todavía no empieza, no hay nada que avisar)
-        FleetDates.normalize(inicioContrato)?.let { return it }
-        agregada?.let { FleetDates.normalize(it) }?.takeIf { it <= hoy }?.let { return it }
+        val primero = registradas.mapNotNull { FleetDates.normalize(it) }.filter { it <= hoy }.minOrNull()
+        val inicio = FleetDates.normalize(inicioContrato)
+        // Contrato que aún no empieza y sin cobros: nada que avisar todavía
+        if (primero == null && inicio != null && inicio > hoy) return inicio
+        val ag = agregada?.let { FleetDates.normalize(it) }?.takeIf { it <= hoy }
+        if (ag != null) return listOfNotNull(primero, ag).min()
+        primero?.let { return it }
+        inicio?.let { return it }
+        agregada?.let { FleetDates.normalize(it) }?.let { return it }
         return hoy
+    }
+
+    /**
+     * Para motos que no tienen guardado desde cuándo se llevan sus cobros (versiones anteriores):
+     * se fija lo que la app ya usaba (primer cobro, o inicio del contrato), para que no cambie al pagar.
+     */
+    fun initialAgregada(hoy: String, inicioContrato: String, registradas: Set<String>): String {
+        registradas.mapNotNull { FleetDates.normalize(it) }.filter { it <= hoy }.minOrNull()?.let { return it }
+        return FleetDates.normalize(inicioContrato) ?: hoy
     }
 }

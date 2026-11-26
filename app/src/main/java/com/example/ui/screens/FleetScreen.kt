@@ -478,7 +478,7 @@ private fun UnitCard(
                             )
                         )
                         Text(
-                            text = "S/ ${"%.0f".format(unit.cuotaDiaria)}",
+                            text = "S/ ${"%.2f".format(unit.cuotaDiaria)}",
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = SuccessGreenText
@@ -512,7 +512,7 @@ private fun UnitCard(
                     )
                 }
 
-                if (unit.deudaTotal > 0.0) {
+                if (unit.deudaTotal > 0.004) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = WarningAmberBg,
@@ -541,7 +541,7 @@ private fun UnitCard(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
             ) {
                 Text(
-                    text = "Editar moto (nombre, placa, contrato, SOAT)",
+                    text = "Editar moto y contrato",
                     fontSize = AppText.Body,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -666,10 +666,10 @@ private fun UnitDetailBottomSheet(
                     Text(
                         text = buildString {
                             append(unit.telefono.ifBlank { "Sin teléfono" })
-                            if (unit.deudaTotal > 0.0) append(" • Debe S/ ${"%.2f".format(unit.deudaTotal)}")
+                            if (unit.deudaTotal > 0.004) append(" • Debe S/ ${"%.2f".format(unit.deudaTotal)}")
                         },
                         fontSize = AppText.Body,
-                        color = if (unit.deudaTotal > 0.0) WarningAmberText else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (unit.deudaTotal > 0.004) WarningAmberText else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -780,7 +780,7 @@ private fun UnitDetailBottomSheet(
                         Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "REGISTRAR COBRO DE CUOTA (S/ ${"%.0f".format(unit.cuotaDiaria)})",
+                            "REGISTRAR COBRO DE CUOTA (S/ ${"%.2f".format(unit.cuotaDiaria)})",
                             fontWeight = FontWeight.Bold,
                             fontSize = AppText.Body
                         )
@@ -937,7 +937,7 @@ private fun UnitDetailBottomSheet(
             text = {
                 Text(
                     "La moto quedará Inactiva y sin chofer. Ya no se le cobrará cuota" +
-                        (if (unit.deudaTotal > 0.0) " y se anulará toda su deuda (S/ ${"%.2f".format(unit.deudaTotal)})." else ".") +
+                        (if (unit.deudaTotal > 0.004) " y se anulará toda su deuda (S/ ${"%.2f".format(unit.deudaTotal)})." else ".") +
                         " El historial se conserva.",
                     fontSize = AppText.Body
                 )

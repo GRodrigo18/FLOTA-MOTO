@@ -240,7 +240,8 @@ data class FleetUiState(
             },
             paidTodayPlacas = dailyPayments.filter { it.fecha == hoy && it.pagado }.map { it.unitPlaca }.toSet(),
             missedByPlaca = missedByPlaca,
-            backup = backupStatus?.copy(hasData = units.isNotEmpty()),
+            // Respaldos solo los ve (y los resuelve) el administrador
+            backup = if (isAdmin) backupStatus?.copy(hasData = units.isNotEmpty()) else null,
             stockAceite = if (inventory.isNotEmpty()) stockAceiteBotellas else null,
             hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
             stockLlantas = llantaItem?.stock,
@@ -249,7 +250,7 @@ data class FleetUiState(
     }
 
     /** Recordatorios que se muestran en Inicio: todos menos los quitados de Inicio. */
-    val homeAlerts: List<UrgentAlert> by lazy { urgentAlerts.filter { it.hideKey !in homeHiddenKeys } }
+    val homeAlerts: List<UrgentAlert> by lazy { urgentAlerts.filter { !AlertMemory.isHidden(it.hideKey, homeHiddenKeys) } }
 }
 
 class FleetViewModel(application: Application) : AndroidViewModel(application) {
@@ -535,6 +536,17 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 MissedPrefs.setDesde(prefs, FleetDates.today())
                 refreshMissedConfig()
             }
+            // Motos de versiones anteriores sin fecha de inicio de cobros: se fija una (una sola vez)
+            val st = uiState.value
+            val agregadas = MissedPrefs.agregadas(prefs)
+            val hoy = FleetDates.today()
+            var nuevas = false
+            st.units.filter { it.placa !in agregadas }.forEach { u ->
+                val regs = st.dailyPayments.filter { it.unitPlaca == u.placa }.map { it.fecha }.toSet()
+                MissedPrefs.setAgregada(prefs, u.placa, MissedPayments.initialAgregada(hoy, u.inicioContrato, regs))
+                nuevas = true
+            }
+            if (nuevas) refreshMissedConfig()
         }
         // Moto parada (taller o inactiva): al volver a trabajar, esos días quedan como "No trabajó"
         // solos, para que no salgan como días sin pagar.
@@ -588,6 +600,23 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
      * trabajar, del día en que paró hasta ayer queda "No trabajó" con ese motivo.
      * Al quedar INACTIVA, además, sus días sin pagar anteriores se anulan (igual que su deuda).
      */
+    /**
+     * Días sin pagar de una moto SIN mirar su estado ni su chofer (missedByPlaca ya no la cuenta
+     * cuando acaba de quedar inactiva o sin chofer, y justo esos días son los que hay que anular).
+     */
+    private fun pendingDaysIgnoringState(unit: FleetUnitEntity): List<String> {
+        val st = uiState.value
+        return MissedPayments.byPlaca(
+            today = FleetDates.today(),
+            hourOfDay = Calendar.getInstance().get(Calendar.HOUR_OF_DAY),
+            desde = st.faltasDesde,
+            agregadas = st.unitAddedDates,
+            avisarDesde = st.avisarDesde,
+            units = mapOf(unit.placa to unit.inicioContrato),
+            registros = st.dailyPayments.filter { it.unitPlaca == unit.placa }.map { it.unitPlaca to it.fecha }
+        )[unit.placa].orEmpty()
+    }
+
     private suspend fun trackStoppedUnits(motos: Map<String, Pair<String, Boolean>>) {
         val hoy = FleetDates.today()
         val guardadas = MissedPrefs.paradas(prefs)
@@ -610,7 +639,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 paradas[placa] = "$hoy|$motivo"
                 cambio = true
                 if (motivo == "Inactiva" && unit != null) {
-                    val pendientes = uiState.value.missedByPlaca[placa].orEmpty().filter { it !in registradas }
+                    val pendientes = pendingDaysIgnoringState(unit).filter { it !in registradas }
                     if (pendientes.isNotEmpty()) repository.markNotWorked(unit, pendientes, "Anulado (inactiva)")
                 }
             } else if (motivo != null && motivo != motivoGuardado && motivo == "Inactiva" && desde != null) {
@@ -618,7 +647,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 paradas[placa] = "$desde|$motivo"
                 cambio = true
                 if (unit != null) {
-                    val pendientes = uiState.value.missedByPlaca[placa].orEmpty().filter { it !in registradas }
+                    val pendientes = pendingDaysIgnoringState(unit).filter { it !in registradas }
                     if (pendientes.isNotEmpty()) repository.markNotWorked(unit, pendientes, "Anulado (inactiva)")
                 }
             } else if (motivo == null && desde != null) {
@@ -682,8 +711,14 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Abre la pestaña Pagos en [fecha] (desde la lista de días sin pagar). */
+    private val _paymentsSubTab = MutableStateFlow(0)
+    val paymentsSubTab: StateFlow<Int> = _paymentsSubTab
+    fun setPaymentsSubTab(tab: Int) { _paymentsSubTab.value = tab }
+
     fun goToPaymentsOn(fecha: String) {
         closeDialog()
+        selectUnit(null)
+        _paymentsSubTab.value = 0
         onTabSelected(1)
         FleetDates.normalize(fecha)?.let { _selectedDate.value = it }
     }
@@ -1154,6 +1189,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Archivo de copia en Google Drive (creado con "Guardar copia en Google Drive" o elegido si ya existía). */
     fun setSyncDocument(context: Context, docUri: android.net.Uri, isNewFile: Boolean) {
+        if (!requireAdmin()) return
         AutoBackup.setDocument(context, docUri)
         // Archivo distinto: la próxima copia se escribe sí o sí (aunque los datos no hayan cambiado)
         lastBackupFingerprint = null
@@ -1165,6 +1201,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSyncFolder(context: Context) {
+        if (!requireAdmin()) return
         AutoBackup.clearFolder(context)
         lastBackupFingerprint = null
         _syncReady.value = isSyncConfigured()
@@ -1172,6 +1209,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun backupToSyncFolderNow(context: Context) {
+        if (!requireAdmin()) return
         viewModelScope.launch {
             val payload = fullBackupPayload()
             if (payload.units.isEmpty()) {
@@ -1190,7 +1228,11 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Todo lo que va en la copia: la base de datos y las fechas "avisar pagos desde". */
     private suspend fun fullBackupPayload(): FleetBackupPayload =
-        repository.getFullBackupPayload(_userEmail.value).copy(avisarDesde = MissedPrefs.avisarDesde(prefs))
+        repository.getFullBackupPayload(_userEmail.value).copy(
+            avisarDesde = MissedPrefs.avisarDesde(prefs),
+            agregadas = MissedPrefs.agregadas(prefs),
+            paradas = MissedPrefs.paradas(prefs)
+        )
 
     /** Lo que hay dentro de una copia, para mostrarlo ANTES de recuperarla. */
     data class BackupPreview(
@@ -1222,6 +1264,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Lee la copia guardada en Drive (el archivo elegido en este teléfono) y muestra qué tiene. */
     fun previewDriveBackup(context: Context, onResult: (BackupPreview?) -> Unit) {
+        if (!requireAdmin()) return
         viewModelScope.launch {
             val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { AutoBackup.readLatestBackup(context) }
             val preview = buildPreview(json, AutoBackup.folderName(context) ?: "Google Drive")
@@ -1232,6 +1275,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Lee una copia elegida con el selector (Drive, Descargas, correo...) y muestra qué tiene. */
     fun previewFileBackup(context: Context, uri: android.net.Uri, onResult: (BackupPreview?) -> Unit) {
+        if (!requireAdmin()) return
         viewModelScope.launch {
             val json = try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1255,6 +1299,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
      * en Drive (así, después de recuperar en un teléfono nuevo, las copias siguen guardándose ahí).
      */
     fun restorePreview(context: Context, preview: BackupPreview, linkUri: android.net.Uri?) {
+        if (!requireAdmin()) return
         viewModelScope.launch {
             // Primero se recupera y DESPUÉS se enlaza el archivo: si se enlazara antes, la copia
             // automática podría escribir los datos viejos de este celular encima de la copia buena.
@@ -1288,6 +1333,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Recupera una copia y devuelve true si se recuperó. */
     private suspend fun restoreFromJsonNow(jsonString: String): Boolean {
+        if (!requireAdmin()) return false
         run {
             val payload = try {
                 BackupHelper.parseFromJson(jsonString)
@@ -1316,7 +1362,18 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 // Las de la copia mandan (así se recuperan también en un celular nuevo)
                 (elegidas + payload.avisarDesde).filterKeys { it in placas }
                     .forEach { (placa, fecha) -> MissedPrefs.setAvisarDesde(prefs, placa, fecha) }
+                // Desde cuándo se llevan sus cobros y si estaban paradas (copias viejas: se calcula)
+                val hoyR = FleetDates.today()
+                payload.units.forEach { u ->
+                    val ag = payload.agregadas[u.placa] ?: MissedPayments.initialAgregada(
+                        hoyR, u.inicioContrato,
+                        payload.dailyPayments.filter { it.unitPlaca == u.placa }.map { it.fecha }.toSet()
+                    )
+                    MissedPrefs.setAgregada(prefs, u.placa, ag)
+                }
+                MissedPrefs.setParadas(prefs, payload.paradas.filterKeys { it in placas })
                 refreshMissedConfig()
+                _selectedUnit.value = null
                 markHistoryUsed()
                 showSnackbar("Datos recuperados: ${payload.units.size} motos.")
                 return true
@@ -1340,8 +1397,12 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Vuelve a mostrar en Inicio un recordatorio que se había quitado. */
     fun showAlertOnHome(alert: UrgentAlert) {
-        if (alert.hideKey !in _homeHiddenKeys.value) return
-        _homeHiddenKeys.value = _homeHiddenKeys.value - alert.hideKey
+        val id = alert.hideKey.substringBefore(AlertEngine.STAGE_SEPARATOR)
+        val quitar = _homeHiddenKeys.value.filter {
+            it == alert.hideKey || (id.startsWith("faltas_") && it.substringBefore(AlertEngine.STAGE_SEPARATOR) == id)
+        }.toSet()
+        if (quitar.isEmpty()) return
+        _homeHiddenKeys.value = _homeHiddenKeys.value - quitar
         AlertMemory.saveHomeHidden(prefs, _homeHiddenKeys.value)
     }
 
@@ -1475,6 +1536,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- CHECKLIST PAGOS DIARIOS (CUOTA EDITABLE S/ 35, S/ 40, etc.) ---
     fun updateDefaultCuotaDiaria(newCuota: Double) {
+        // Cambia la cuota de TODAS las motos: solo el administrador
+        if (!requireAdmin()) return
         if (newCuota <= 0.0 || newCuota > 1000.0) {
             showSnackbar("Escribe una cuota válida (por ejemplo 35).")
             return
@@ -1523,7 +1586,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             // Tampoco se cobra a las motos marcadas "No trabajó" ese día
             val conRegistro = registrosDelDia.map { it.unitPlaca }.toSet()
             val currentUnits = uiState.value.units.filter {
-                if (paid) FleetRules.debeCuota(it.estado) && it.placa !in conRegistro else it.placa in yaPagaron
+                // Sin chofer tampoco: nadie pagó esa cuota (no se inventa dinero en Caja)
+                if (paid) FleetRules.cobraHoy(it.estado, it.cliente) && it.placa !in conRegistro else it.placa in yaPagaron
             }
             currentUnits.forEach { unit ->
                 repository.toggleDailyPayment(unit, date, paid)
@@ -1686,6 +1750,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         // Datos más recientes de la moto (la ventana pudo abrirse antes de un pago o abono)
         val fresh = uiState.value.units.firstOrNull { it.id == unit.id } ?: unit
+        // Pasar a Inactivo anula toda su deuda: solo el administrador (igual que anular una deuda)
+        if (nuevoEstado == "Inactivo" && fresh.estado != "Inactivo" && !requireAdmin()) return
         val otrasPlacas = uiState.value.units.filter { it.id != fresh.id }.map { it.placa }
         FleetRules.validateRename(nuevoNombre, nuevaPlaca, otrasPlacas)?.let { error ->
             showSnackbar(error)
@@ -1730,7 +1796,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val updatedUnit = fresh.copy(
-                cliente = chofer.trim(),
+                cliente = chofer.trim().ifEmpty { "Sin asignar" },
                 telefono = telefono.trim(),
                 cuotaDiaria = cuotaDiaria,
                 inicioContrato = inicioContrato,
@@ -1884,9 +1950,10 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertUnit(newUnit)
             // Día en que se registró: antes de eso no hay días sin pagar que avisar
+            // Desde el inicio de su contrato: así salen sus días sin pagar y no se borran al pagar el último
             MissedPrefs.setAgregada(
                 prefs, newUnit.placa,
-                maxOf(FleetDates.today(), FleetDates.normalize(newUnit.inicioContrato) ?: FleetDates.today())
+                FleetDates.normalize(newUnit.inicioContrato) ?: FleetDates.today()
             )
             refreshMissedConfig()
 
@@ -2095,6 +2162,8 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun breakContract(unit: FleetUnitEntity) {
+        // Anula toda la deuda de la moto: solo el administrador
+        if (!requireAdmin()) return
         viewModelScope.launch {
             val fresh = uiState.value.units.firstOrNull { it.id == unit.id } ?: unit
             val updated = fresh.copy(cliente = "Sin asignar", telefono = "", estado = "Inactivo")
@@ -2150,7 +2219,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
     fun movementFixHint(mov: FinanceMovementEntity): String? = when {
         mov.categoria.startsWith("Pago Diario") || mov.categoria.startsWith("Pago Adelantado") -> null
         mov.categoria == "Mantenimiento Moto" -> "Este gasto se anula desde Taller → Trabajos (así el aceite y las llantas vuelven al almacén)."
-        mov.categoria == "Abono Garantía" -> "Este abono se anula desde Cobros → Deudas (así la deuda vuelve a subir)."
+        mov.categoria == "Abono Garantía" -> "Este abono se anula desde Pagos → Deudas (así la deuda vuelve a subir)."
         mov.categoria == "Compra Aceites" || mov.categoria == "Compra Repuestos" ->
             "Es una compra del almacén: corrige el stock en Taller → Repuestos y luego anula este gasto aquí."
         else -> null
@@ -2178,7 +2247,9 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 when (record.tipo) {
                     "CARGO" -> "Cargo anulado: la deuda de ${record.nombreMoto} baja S/ ${"%.2f".format(record.monto)}."
                     "ABONO" -> "Abono anulado: la deuda de ${record.nombreMoto} sube S/ ${"%.2f".format(record.monto)} y sale de Caja."
-                    else -> "Anulación deshecha: la garantía de ${record.nombreMoto} vuelve a ser deuda."
+                    else -> if (record.motivo.startsWith(DebtMath.MOTIVO_DEUDA_ANULADA, ignoreCase = true))
+                        "Anulación deshecha: la deuda de ${record.nombreMoto} vuelve (S/ ${"%.2f".format(record.monto)})."
+                    else "Anulación deshecha: la garantía de ${record.nombreMoto} vuelve a ser deuda."
                 }
             )
         }

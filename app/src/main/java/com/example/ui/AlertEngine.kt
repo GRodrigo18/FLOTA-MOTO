@@ -191,7 +191,7 @@ object AlertEngine {
 
             } // fin de: solo motos activas
 
-            if (u.deuda > 0.0) {
+            if (u.deuda > 0.004) {
                 addIfNew(
                     UrgentAlert(
                         id = "deuda_${u.placa}",

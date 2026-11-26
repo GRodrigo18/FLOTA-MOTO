@@ -102,10 +102,13 @@ internal fun DailyChecklistTabContent(
 ) {
     // Las motos inactivas no pagan cuota: no aparecen en el cobro diario ni en lo esperado.
     val motosCobro = state.units.filter { it.estado != "Inactivo" }
-    val totalMotos = motosCobro.count { FleetRules.debeCuota(it.estado) }
+    // Lo esperado del día: motos que trabajan, con chofer y que no se marcaron "No trabajó" ese día
+    val noTrabajaron = state.pagosDelDiaSeleccionado.filter { !it.pagado }.map { it.unitPlaca }.toSet()
+    val motosEsperadas = motosCobro.filter { FleetRules.cobraHoy(it.estado, it.cliente) && it.placa !in noTrabajaron }
+    val totalMotos = motosEsperadas.size
     val pagadasCount = state.conteoPagadosHoy
     val porcentajePagado = if (totalMotos > 0) (pagadasCount.toFloat() / totalMotos).coerceAtMost(1f) else 0f
-    val totalEsperado = motosCobro.filter { FleetRules.debeCuota(it.estado) }.sumOf { it.cuotaDiaria }
+    val totalEsperado = motosEsperadas.sumOf { it.cuotaDiaria }
 
     var showEditCuotaDialog by remember { mutableStateOf(false) }
     var cuotaToEditInput by remember { mutableStateOf(state.defaultCuotaDiaria.toString()) }
@@ -115,7 +118,8 @@ internal fun DailyChecklistTabContent(
 
     if (confirmMarkAll) {
         // Pendientes = trabajan y no tienen registro ese día (ni pago ni "No trabajó")
-        val pendientes = motosCobro.count { FleetRules.debeCuota(it.estado) && it.placa !in state.pagosDelDiaSeleccionado.map { p -> p.unitPlaca } }
+        val conRegistro = state.pagosDelDiaSeleccionado.map { p -> p.unitPlaca }.toSet()
+        val pendientes = motosCobro.count { FleetRules.cobraHoy(it.estado, it.cliente) && it.placa !in conRegistro }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmMarkAll = false },
             title = { Text("¿Marcar todas como pagadas?") },
@@ -228,16 +232,16 @@ internal fun DailyChecklistTabContent(
                                 color = Color.White
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     text = "Cuota base: S/ ${"%.2f".format(state.defaultCuotaDiaria)}",
+                                    maxLines = 1,
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         color = Color.White.copy(alpha = 0.85f),
                                         fontWeight = FontWeight.Medium
                                     )
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Surface(
+                                if (state.isAdmin) Surface(
                                     onClick = {
                                         cuotaToEditInput = state.defaultCuotaDiaria.toString()
                                         showEditCuotaDialog = true
@@ -252,7 +256,7 @@ internal fun DailyChecklistTabContent(
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = "Editar cuota", tint = CyanAccent, modifier = Modifier.size(11.dp))
                                         Spacer(modifier = Modifier.width(3.dp))
-                                        Text("Modificar", color = CyanAccent, fontSize = AppText.Small, fontWeight = FontWeight.Bold)
+                                        Text("Modificar", color = CyanAccent, fontSize = AppText.Small, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                                     }
                                 }
                             }
@@ -268,7 +272,8 @@ internal fun DailyChecklistTabContent(
                                 horizontalAlignment = Alignment.End
                             ) {
                                 Text(
-                                    text = "COBRADO HOY",
+                                    text = if (state.selectedDate == com.example.util.FleetDates.today()) "COBRADO HOY" else "COBRADO ESE DÍA",
+                                    maxLines = 1,
                                     fontSize = AppText.Small,
                                     fontWeight = FontWeight.Bold,
                                     color = EmeraldGreen
@@ -335,8 +340,8 @@ internal fun DailyChecklistTabContent(
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Marcar Todas", fontWeight = FontWeight.Bold, fontSize = AppText.Body)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Todas", fontWeight = FontWeight.Bold, fontSize = AppText.Body, maxLines = 1, softWrap = false)
                         }
 
                         OutlinedButton(
@@ -347,7 +352,7 @@ internal fun DailyChecklistTabContent(
                             shape = RoundedCornerShape(10.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
                         ) {
-                            Text("Desmarcar", color = Color.White.copy(alpha = 0.85f), fontSize = AppText.Body)
+                            Text("Desmarcar", color = Color.White.copy(alpha = 0.85f), fontSize = AppText.Body, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -450,7 +455,7 @@ internal fun DailyChecklistTabContent(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Configura el cobro diario por defecto para la flota (ej. S/ 35.00, S/ 40.00).",
+                        text = "Se cambia la cuota de TODAS las motos, también las que tienen otra cuota propia. Para una sola moto, cámbiala en su tarjeta.",
                         fontSize = AppText.Body,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -669,7 +674,7 @@ internal fun DailyChecklistUnitCard(
                     }
                 }
 
-                if (unit.deudaTotal > 0.0) {
+                if (unit.deudaTotal > 0.004) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -700,6 +705,8 @@ internal fun DailyChecklistUnitCard(
                                 color = WarningAmberText,
                                 fontSize = AppText.Small,
                                 fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }

@@ -107,7 +107,9 @@ internal fun DebtManagementTabContent(
         val efecto = when (rec.tipo) {
             "CARGO" -> "La deuda de ${rec.nombreMoto} bajará S/ ${"%.2f".format(rec.monto)}."
             "ABONO" -> "La deuda de ${rec.nombreMoto} volverá a subir S/ ${"%.2f".format(rec.monto)} y ese dinero sale de Caja."
-            else -> "La garantía anulada de ${rec.nombreMoto} (S/ ${"%.2f".format(rec.monto)}) volverá a ser deuda."
+            else -> if (rec.motivo.startsWith(com.example.util.DebtMath.MOTIVO_DEUDA_ANULADA, ignoreCase = true))
+                "La deuda anulada de ${rec.nombreMoto} (S/ ${"%.2f".format(rec.monto)}) volverá a su saldo."
+            else "La garantía anulada de ${rec.nombreMoto} (S/ ${"%.2f".format(rec.monto)}) volverá a ser deuda."
         }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { recordToUndo = null },
@@ -402,14 +404,14 @@ internal fun DebtUnitCard(
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = if (unit.deudaTotal > 0.0) WarningAmberBg else SuccessGreenBg,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (unit.deudaTotal > 0.0) WarningAmberText.copy(alpha = 0.3f) else SuccessGreenText.copy(alpha = 0.3f))
+                    color = if (unit.deudaTotal > 0.004) WarningAmberBg else SuccessGreenBg,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (unit.deudaTotal > 0.004) WarningAmberText.copy(alpha = 0.3f) else SuccessGreenText.copy(alpha = 0.3f))
                 ) {
                     Text(
-                        text = if (unit.deudaTotal > 0.0) "DEBE S/ ${"%.2f".format(unit.deudaTotal)}" else "AL DÍA (S/ 0.00)",
+                        text = if (unit.deudaTotal > 0.004) "DEBE S/ ${"%.2f".format(unit.deudaTotal)}" else "AL DÍA (S/ 0.00)",
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (unit.deudaTotal > 0.0) WarningAmberText else SuccessGreenText
+                            color = if (unit.deudaTotal > 0.004) WarningAmberText else SuccessGreenText
                         ),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
@@ -436,7 +438,7 @@ internal fun DebtUnitCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Saldo de Garantía pendiente: S/ ${"%.2f".format(unit.deudaGarantia)} de S/ 200.00",
+                        text = "Saldo de Garantía pendiente: S/ ${"%.2f".format(unit.deudaGarantia)}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold

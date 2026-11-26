@@ -91,6 +91,22 @@ el ingreso se bloquea 30 segundos.
 - Se pide el permiso de notificaciones (Android 13+) al ingresar, y se programan los dos avisos
   diarios automáticamente.
 
+## Cambios de la versión 1.9 (26 nov 2026) — revisión final
+
+- Al registrar o editar una moto ya se puede escribir el **chofer y su teléfono**.
+- Los días sin pagar **ya no desaparecen** al pagar el día más reciente: se cuentan desde el inicio del contrato
+  (o el primer cobro) y siguen en la campana hasta marcarlos «Pagó» o «No trabajó».
+- Al poner una moto **Inactiva** o **finalizar su contrato**, sus días sin pagar se anulan junto con su deuda
+  (solo el administrador puede hacerlo).
+- El **cobrador** no ve ni puede tocar Respaldos, recuperar copias ni cambiar la cuota de toda la flota.
+- La copia de seguridad guarda también desde cuándo se cobra cada moto y las motos paradas.
+- «Ver ese día en Pagos» abre directo la lista de cobros de esa fecha.
+- «Marcar todas» ya no cobra a motos sin chofer; lo esperado del día no cuenta motos sin chofer ni «No trabajó».
+- Si se borra un pago incompleto, también se quita lo que había pasado a deuda.
+- Montos redondeados a céntimos; textos y botones que ya no se cortan en pantallas chicas; icono propio en las
+  notificaciones.
+- Pruebas automáticas de pantallas completas (modo de prueba con Robolectric): más de 190 pruebas.
+
 ## Cambios de la versión 1.8 (26 nov 2026) — pagos atrasados con fechas
 
 - **Antes solo salía el día de hoy**: los días sin pagar se contaban desde el día en que se instaló la versión, así que al registrar pagos de días anteriores no aparecían los atrasados. Ahora cada moto se revisa **desde su primer cobro registrado** (o, si aún no tiene cobros, desde el inicio de su contrato), como máximo 60 días atrás, o desde la fecha que elija el dueño en «Avisar pagos desde».

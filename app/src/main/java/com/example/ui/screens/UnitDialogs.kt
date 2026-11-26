@@ -200,6 +200,22 @@ fun AddUnitDialog(
                     modifier = Modifier.fillMaxWidth().testTag("new_unit_placa_input")
                 )
                 OutlinedTextField(
+                    value = cliente,
+                    onValueChange = { if (it.length <= 60) cliente = it },
+                    label = { Text("Chofer (vacío si aún no tiene)") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("new_unit_chofer_input")
+                )
+                OutlinedTextField(
+                    value = telefono,
+                    onValueChange = { v -> telefono = v.filter { it.isDigit() || it == '+' || it == ' ' }.take(15) },
+                    label = { Text("Teléfono del chofer") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("new_unit_phone_input")
+                )
+                OutlinedTextField(
                     value = cuotaText,
                     onValueChange = { cuotaText = it },
                     label = { Text("Cuota Diaria (S/)") },
@@ -461,6 +477,24 @@ fun EditContractSoatDialog(
                         modifier = Modifier.weight(1f).testTag("edit_unit_plate")
                     )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = chofer,
+                        onValueChange = { if (it.length <= 60) chofer = it },
+                        label = { Text("Chofer") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        modifier = Modifier.weight(1f).testTag("edit_unit_chofer")
+                    )
+                    OutlinedTextField(
+                        value = telefono,
+                        onValueChange = { v -> telefono = v.filter { it.isDigit() || it == '+' || it == ' ' }.take(15) },
+                        label = { Text("Teléfono") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier.weight(1f).testTag("edit_unit_phone")
+                    )
+                }
 
                 // Selector de Estado Operativo de la Moto
                 Text(
@@ -481,7 +515,7 @@ fun EditContractSoatDialog(
                 }
                 if (estadoSeleccionado == "Inactivo" && unit.estado != "Inactivo") {
                     Text(
-                        text = if (unit.deudaTotal > 0.0) {
+                        text = if (unit.deudaTotal > 0.004) {
                             "Inactiva no paga cuota ni garantía. Se anula toda su deuda (S/ ${"%.2f".format(unit.deudaTotal)}); queda en el historial de Deudas."
                         } else {
                             "Inactiva no paga cuota ni garantía."

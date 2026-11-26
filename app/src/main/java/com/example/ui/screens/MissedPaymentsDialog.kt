@@ -18,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +40,12 @@ import com.example.util.MissedPayments
  */
 @Composable
 fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
-    val unit = state.selectedUnit ?: run { viewModel.closeDialog(); return }
+    val unit = state.selectedUnit
+    if (unit == null) {
+        // Cerrar fuera de la composición (no se cambia el estado mientras se dibuja)
+        LaunchedEffect(Unit) { viewModel.closeDialog() }
+        return
+    }
     val faltas = state.missedByPlaca[unit.placa].orEmpty().reversed() // la más reciente arriba
     val avisarDesde = state.avisarDesde[unit.placa]
     var confirmarTodos by remember { mutableStateOf(false) }
@@ -76,14 +82,14 @@ fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
                 modifier = Modifier.heightIn(max = 420.dp)
             ) {
                 // Desde qué fecha se avisan los pagos de ESTA moto (lo elige el dueño)
-                item(key = "avisar_desde") {
+                if (state.isAdmin) item(key = "avisar_desde") {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         DatePickField(
                             label = "Avisar pagos desde",
                             value = avisarDesde ?: "",
                             onPick = { viewModel.setPaymentAlertStart(unit, it) },
                             modifier = Modifier.fillMaxWidth(),
-                            supportingText = if (avisarDesde == null) "Automático (desde que se registró la moto). Toca para elegir otra fecha."
+                            supportingText = if (avisarDesde == null) "Automático (desde el inicio del contrato o su primer cobro). Toca para elegir otra fecha."
                             else "Elegida por ti (máximo 6 meses atrás)."
                         )
                         if (avisarDesde != null) {
@@ -119,7 +125,7 @@ fun MissedPaymentsDialog(state: FleetUiState, viewModel: FleetViewModel) {
                                     onClick = { viewModel.payMissedDay(unit, fecha) },
                                     colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen),
                                     modifier = Modifier.weight(1f)
-                                ) { Text("Pagó S/ ${"%.0f".format(unit.cuotaDiaria)}", maxLines = 1, fontSize = AppText.Body) }
+                                ) { Text("Pagó S/ ${if (unit.cuotaDiaria % 1.0 == 0.0) "%.0f".format(unit.cuotaDiaria) else "%.2f".format(unit.cuotaDiaria)}", maxLines = 1, fontSize = AppText.Body) }
                                 OutlinedButton(
                                     onClick = { viewModel.markDayNotWorked(unit, fecha) },
                                     modifier = Modifier.weight(1f)

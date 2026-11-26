@@ -137,7 +137,7 @@ fun DashboardScreen(
                 StatTile(
                     label = "Deuda de choferes",
                     value = "S/ ${"%,.2f".format(state.totalDeudaPendiente)}",
-                    detail = "${state.units.count { it.deudaTotal > 0 }} motos con saldo",
+                    detail = "${state.units.count { it.deudaTotal > 0.004 }} motos con saldo",
                     icon = Icons.Default.MonetizationOn,
                     color = WarningAmber,
                     modifier = Modifier.weight(1f),

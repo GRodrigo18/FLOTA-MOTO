@@ -328,6 +328,7 @@ class FleetRepository(
                 // Primero eliminar registro previo para evitar duplicados en la misma moto y fecha
                 dao.deleteDailyPayment(fecha, unit.placa)
                 dao.deleteDailyPaymentMovement(unit.placa, fecha)
+                removeIncompleteCargo(unit.placa, fecha)
 
                 dao.insertDailyPayment(
                     DailyPaymentEntity(
@@ -363,8 +364,15 @@ class FleetRepository(
                 // Al desmarcar, borrar el pago diario Y borrar el movimiento financiero correspondiente para NO generar historial falso
                 dao.deleteDailyPayment(fecha, unit.placa)
                 dao.deleteDailyPaymentMovement(unit.placa, fecha)
+                // Y lo que faltó de ese pago (si pasó a deuda) ya no se debe
+                removeIncompleteCargo(unit.placa, fecha)
             }
         }
+    }
+
+    /** Quita el cargo "Cuota incompleta del [fecha]" de la moto y baja su deuda en ese monto. */
+    private suspend fun removeIncompleteCargo(placa: String, fecha: String) {
+        dao.getCargosByMotivoPrefix(placa, "Cuota incompleta del $fecha ").forEach { deleteDebtRecord(it) }
     }
 
     suspend fun addDebtCargo(unit: FleetUnitEntity, monto: Double, motivo: String) = withContext(Dispatchers.IO) {
@@ -382,7 +390,7 @@ class FleetRepository(
             )
             // Saldo leído de la base en el momento (la ficha en pantalla puede estar desactualizada)
             val actual = dao.getUnitByPlaca(unit.placa) ?: unit
-            dao.updateUnitDebt(unit.placa, actual.deudaTotal + monto)
+            dao.updateUnitDebt(unit.placa, Math.round((actual.deudaTotal + monto) * 100.0) / 100.0)
         }
     }
 
@@ -400,8 +408,8 @@ class FleetRepository(
                 )
             )
             val actual = dao.getUnitByPlaca(unit.placa) ?: unit
-            val nuevaDeuda = (actual.deudaTotal - monto).coerceAtLeast(0.0)
-            val nuevaDeudaGarantia = (actual.deudaGarantia - monto).coerceAtLeast(0.0)
+            val nuevaDeuda = (Math.round((actual.deudaTotal - monto) * 100.0) / 100.0).coerceAtLeast(0.0)
+            val nuevaDeudaGarantia = (Math.round((actual.deudaGarantia - monto) * 100.0) / 100.0).coerceAtLeast(0.0)
             dao.updateUnitDebtAndGarantia(unit.placa, nuevaDeuda, nuevaDeudaGarantia)
 
             // Registrar ingreso en Finanzas

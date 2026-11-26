@@ -34,7 +34,10 @@ data class FleetBackupPayload(
     // Lotes de compra de aceite/llantas (antes no se respaldaban y se perdían al restaurar)
     val inventoryBatches: List<InventoryBatchEntity> = emptyList(),
     // Fechas "avisar pagos desde" elegidas por el dueño (placa → yyyy-MM-dd), v1.7
-    val avisarDesde: Map<String, String> = emptyMap()
+    val avisarDesde: Map<String, String> = emptyMap(),
+    // v1.9: desde cuándo se llevan los cobros de cada moto y motos paradas ("fecha|motivo")
+    val agregadas: Map<String, String> = emptyMap(),
+    val paradas: Map<String, String> = emptyMap()
 )
 
 object BackupHelper {
@@ -213,6 +216,8 @@ object BackupHelper {
         val avisar = JSONObject()
         payload.avisarDesde.forEach { (placa, fecha) -> avisar.put(placa, fecha) }
         root.put("avisarDesde", avisar)
+        root.put("agregadas", JSONObject().apply { payload.agregadas.forEach { (k, v) -> put(k, v) } })
+        root.put("paradas", JSONObject().apply { payload.paradas.forEach { (k, v) -> put(k, v) } })
         root.put("formatVersion", 2)
 
         return root.toString(2)
@@ -419,11 +424,16 @@ object BackupHelper {
             inventoryItems = inventoryItems,
             maintenanceTasks = maintenanceTasks,
             inventoryBatches = inventoryBatches,
-            avisarDesde = root.optJSONObject("avisarDesde")?.let { o ->
-                o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }
-            } ?: emptyMap()
+            avisarDesde = readStringMap(root, "avisarDesde"),
+            agregadas = readStringMap(root, "agregadas"),
+            paradas = readStringMap(root, "paradas")
         )
     }
+
+    private fun readStringMap(root: JSONObject, key: String): Map<String, String> =
+        root.optJSONObject(key)?.let { o ->
+            o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }
+        } ?: emptyMap()
 
     /** Borra copias con datos que ya no hacen falta: deja solo las [keep] más recientes. */
     private fun pruneFiles(dir: File, prefix: String, keep: Int) {

@@ -66,7 +66,23 @@ object AlertMemory {
      */
     fun prune(hidden: Set<String>, activeKeys: Collection<String>): Set<String> {
         val active = activeKeys.toSet()
-        return hidden.filterTo(LinkedHashSet()) { it in active }
+        // Días sin pagar: se recuerda mientras la moto siga con días pendientes (aunque pague el último)
+        val faltasActivas = active.filter { it.startsWith(FALTAS_PREFIX) }.map { it.substringBefore('#') }.toSet()
+        return hidden.filterTo(LinkedHashSet()) { it in active || (it.startsWith(FALTAS_PREFIX) && it.substringBefore('#') in faltasActivas) }
+    }
+
+    private const val FALTAS_PREFIX = "faltas_"
+
+    /**
+     * ¿Está oculto en Inicio? Igual a la clave guardada; para "días sin pagar" (clave = moto + día más
+     * reciente) sigue oculto mientras no aparezca un día sin pagar MÁS NUEVO que el que había al ocultarlo.
+     */
+    fun isHidden(hideKey: String, hidden: Set<String>): Boolean {
+        if (hideKey in hidden) return true
+        if (!hideKey.startsWith(FALTAS_PREFIX) || '#' !in hideKey) return false
+        val id = hideKey.substringBefore('#')
+        val dia = hideKey.substringAfter('#')
+        return hidden.any { it.startsWith("$id#") && it.substringAfter('#') >= dia }
     }
 
     private fun readSet(prefs: SharedPreferences, dayKey: String, idsKey: String, day: String): Set<String> {

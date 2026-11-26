@@ -104,4 +104,10 @@ object FleetRules {
 
     /** Una moto paga cuota del día solo si está trabajando (no inactiva ni en el taller). */
     fun debeCuota(estado: String): Boolean = estado != "Inactivo" && estado != "En Taller"
+
+    /** Tiene un chofer asignado (sin chofer la moto no trabaja ni paga cuota). */
+    fun tieneChofer(cliente: String): Boolean = cliente.isNotBlank() && !cliente.trim().equals("Sin asignar", ignoreCase = true)
+
+    /** Debe pagar la cuota del día: trabaja (no inactiva ni en taller) y tiene chofer. */
+    fun cobraHoy(estado: String, cliente: String): Boolean = debeCuota(estado) && tieneChofer(cliente)
 }

@@ -108,7 +108,7 @@ object NotificationHelper {
             style.setSummaryText("Se quitan solos cuando lo resuelves")
 
             val builder = NotificationCompat.Builder(context, REMINDERS_CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_reminder)
                 .setContentTitle(title)
                 .setContentText(if (n == 1) titles[0] else "${titles[0]} y ${n - 1} más")
                 .setStyle(style)
@@ -124,7 +124,7 @@ object NotificationHelper {
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setPublicVersion(
                     NotificationCompat.Builder(context, REMINDERS_CHANNEL_ID)
-                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setSmallIcon(R.drawable.ic_stat_reminder)
                         .setContentTitle("MotoFlota Pro")
                         .setContentText("Tienes $n recordatorio${if (n == 1) "" else "s"} pendiente${if (n == 1) "" else "s"}.")
                         .setSilent(true)
@@ -214,7 +214,7 @@ object NotificationHelper {
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_reminder)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
@@ -224,7 +224,7 @@ object NotificationHelper {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(
                 NotificationCompat.Builder(context, CHANNEL_ID)
-                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_reminder)
                     .setContentTitle("MotoFlota Pro")
                     .setContentText("Tienes avisos nuevos. Desbloquea para verlos.")
                     .build()

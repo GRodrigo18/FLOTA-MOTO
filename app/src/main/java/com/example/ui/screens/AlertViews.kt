@@ -265,7 +265,7 @@ fun EmergentAlertsDialog(
                                 onDismiss()
                                 openAlertTarget(alert, state, viewModel)
                             },
-                            hiddenFromHome = alert.hideKey in state.homeHiddenKeys,
+                            hiddenFromHome = com.example.util.AlertMemory.isHidden(alert.hideKey, state.homeHiddenKeys),
                             onShowOnHome = { viewModel.showAlertOnHome(alert) }
                         )
                     }

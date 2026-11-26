@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +64,7 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -129,7 +132,8 @@ fun DailyPaymentsScreen(
     state: FleetUiState,
     viewModel: FleetViewModel
 ) {
-    var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Checklist Diario S/35, 1: Control de Deudas
+    // 0: Cobros diarios, 1: Deudas. Lo guarda el ViewModel: "Ver ese día en Pagos" abre siempre Cobros
+    val selectedSubTab by viewModel.paymentsSubTab.collectAsState()
 
     Column(
         modifier = Modifier
@@ -155,7 +159,7 @@ fun DailyPaymentsScreen(
             ) {
                 Tab(
                     selected = selectedSubTab == 0,
-                    onClick = { selectedSubTab = 0 },
+                    onClick = { viewModel.setPaymentsSubTab(0) },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -166,7 +170,8 @@ fun DailyPaymentsScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                "Cobros Diarios S/ 35",
+                                "Cobros diarios",
+                                maxLines = 1,
                                 fontWeight = if (selectedSubTab == 0) FontWeight.Bold else FontWeight.Normal,
                                 color = if (selectedSubTab == 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -176,7 +181,7 @@ fun DailyPaymentsScreen(
                 )
                 Tab(
                     selected = selectedSubTab == 1,
-                    onClick = { selectedSubTab = 1 },
+                    onClick = { viewModel.setPaymentsSubTab(1) },
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -248,11 +253,15 @@ internal fun DateSelectorBar(
                     Icon(Icons.Default.ArrowBackIosNew, contentDescription = "Día anterior", modifier = Modifier.size(16.dp))
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // En pantallas chicas (360dp) se desliza en vez de partir el texto letra por letra
+                Row(
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+                ) {
                     FilterChip(
                         selected = selectedDate == yesterdayStr,
                         onClick = { onDateSelected(yesterdayStr) },
-                        label = { Text("Ayer (${formatShortDayLabel(yesterdayStr)})", fontSize = AppText.Small) },
+                        label = { Text("Ayer (${formatShortDayLabel(yesterdayStr)})", fontSize = AppText.Small, maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black
@@ -261,7 +270,7 @@ internal fun DateSelectorBar(
                     FilterChip(
                         selected = selectedDate == todayStr,
                         onClick = { onDateSelected(todayStr) },
-                        label = { Text("HOY (${formatShortDayLabel(todayStr)})", fontSize = AppText.Small, fontWeight = FontWeight.Bold) },
+                        label = { Text("HOY (${formatShortDayLabel(todayStr)})", fontSize = AppText.Small, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black
@@ -270,7 +279,7 @@ internal fun DateSelectorBar(
                     FilterChip(
                         selected = selectedDate == tomorrowStr,
                         onClick = { onDateSelected(tomorrowStr) },
-                        label = { Text("Mañana (${formatShortDayLabel(tomorrowStr)})", fontSize = AppText.Small) },
+                        label = { Text("Mañana (${formatShortDayLabel(tomorrowStr)})", fontSize = AppText.Small, maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = CyanAccent,
                             selectedLabelColor = Color.Black

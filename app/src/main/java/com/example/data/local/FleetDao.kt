@@ -284,6 +284,10 @@ interface FleetDao {
     @Query("DELETE FROM debt_records WHERE id = :id")
     suspend fun deleteDebtRecordById(id: Long)
 
+    /** Cargos "Cuota incompleta del <fecha>" de una moto (se quitan si se borra o cambia ese pago). */
+    @Query("SELECT * FROM debt_records WHERE unitPlaca = :placa AND tipo = 'CARGO' AND motivo LIKE :prefijo || '%'")
+    suspend fun getCargosByMotivoPrefix(placa: String, prefijo: String): List<DebtRecordEntity>
+
     /**
      * Borra el movimiento de Caja que se creó junto con otro registro (mismo monto, moto y categoría),
      * eligiendo el más cercano en el tiempo. Devuelve cuántas filas borró (0 o 1).

@@ -57,6 +57,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -285,7 +286,9 @@ fun FleetDialogHost(
             viewModel.startInteractiveTour()
         }
 
-        DialogType.BACKUP_CLOUD -> {
+        DialogType.BACKUP_CLOUD -> if (!state.isAdmin) {
+            LaunchedEffect(Unit) { viewModel.closeDialog() }
+        } else {
             BackupCloudDialog(
                 state = state,
                 viewModel = viewModel,
