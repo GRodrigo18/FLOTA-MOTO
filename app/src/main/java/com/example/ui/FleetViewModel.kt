@@ -2247,7 +2247,7 @@ class FleetViewModel(application: Application) : AndroidViewModel(application) {
                 when (record.tipo) {
                     "CARGO" -> "Cargo anulado: la deuda de ${record.nombreMoto} baja S/ ${"%.2f".format(record.monto)}."
                     "ABONO" -> "Abono anulado: la deuda de ${record.nombreMoto} sube S/ ${"%.2f".format(record.monto)} y sale de Caja."
-                    else -> if (record.motivo.startsWith(DebtMath.MOTIVO_DEUDA_ANULADA, ignoreCase = true))
+                    else -> if (record.motivo.startsWith(com.example.util.DebtMath.MOTIVO_DEUDA_ANULADA, ignoreCase = true))
                         "Anulación deshecha: la deuda de ${record.nombreMoto} vuelve (S/ ${"%.2f".format(record.monto)})."
                     else "Anulación deshecha: la garantía de ${record.nombreMoto} vuelve a ser deuda."
                 }
