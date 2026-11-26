@@ -49,7 +49,16 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      // Modo de prueba (Robolectric): si Maven Central no responde, se puede usar un espejo
+      // con la variable ROBOLECTRIC_REPO_URL.
+      all { test ->
+        System.getenv("ROBOLECTRIC_REPO_URL")?.let { test.systemProperty("robolectric.dependency.repo.url", it) }
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -85,6 +94,13 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.org.json) // org.json real para probar respaldos sin teléfono
   testImplementation(libs.kotlinx.coroutines.test)
+  // Modo de prueba: la app corre en la computadora (Robolectric) con base de datos y pantallas reales
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.test.core)
+  testImplementation(libs.androidx.test.ext.junit)
+  testImplementation(platform(libs.androidx.compose.bom))
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
   "ksp"(libs.androidx.room.compiler)
 }
