@@ -125,7 +125,7 @@ class ScreensRenderTest : E2EBase() {
         tab(1)
         vm.setSelectedDate(today)
         compose.waitForIdle()
-        assertText("Cobros Diarios S/ 35", "CONTROL DIARIO DE CUOTAS")
+        assertText("Cobros diarios", "CONTROL DIARIO DE CUOTAS")
         shot("02_pagos_cobro_diario")
         compose.onAllNodes(verticalList).onFirst().performScrollToNode(hasText("Moto 2", substring = true))
         assertText("Moto 2")

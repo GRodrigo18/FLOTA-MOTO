@@ -229,7 +229,7 @@ class AlertsBackupRenameE2ETest : E2EBase() {
     @Test
     fun `recuperar una copia con una moto en el taller conserva desde cuando esta parada`() {
         loginAdmin()
-        addMoto("Moto 1", "ABC123", "Juan")
+        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 8)
         payOn("ABC123", d(-8), d(-7), d(-6))
         vm.markUnitInWorkshop(unit("ABC123"))
         await("en taller") { it.units.first { u -> u.placa == "ABC123" }.estado == "En Taller" }

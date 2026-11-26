@@ -36,7 +36,10 @@ class DebtsInactiveE2ETest : E2EBase() {
         assertEquals(15.0, settle(150).units.first { it.placa == "ABC123" }.deudaTotal, 0.0)
 
         vm.addDebtAbono(unit("ABC123"), 5.0, "Abono parcial")
-        st = await("deuda 10") { it.units.first { u -> u.placa == "ABC123" }.deudaTotal == 10.0 }
+        // Deuda y Caja llegan por flujos distintos de la base: se esperan los dos
+        st = await("deuda 10 y abono en Caja") {
+            it.units.first { u -> u.placa == "ABC123" }.deudaTotal == 10.0 && kotlin.math.abs(it.totalIngresos - (ingresos0 + 25.0)) < 0.001
+        }
         assertEquals(ingresos0 + 25.0, st.totalIngresos, 0.001)
         val abono = st.debtRecords.single { it.tipo == "ABONO" }
 
@@ -142,7 +145,7 @@ class DebtsInactiveE2ETest : E2EBase() {
     @Test
     fun `En Taller y luego a trabajar - los dias parada quedan No trabajo y no se cobran`() {
         loginAdmin()
-        addMoto("Moto 1", "ABC123", "Juan")
+        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 7)
         payOn("ABC123", d(-7), d(-6))
 
         vm.markUnitInWorkshop(unit("ABC123"))

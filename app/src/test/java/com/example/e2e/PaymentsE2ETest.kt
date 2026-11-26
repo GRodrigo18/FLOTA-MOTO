@@ -58,8 +58,9 @@ class PaymentsE2ETest : E2EBase() {
     @Test
     fun `dias sin pagar por moto con las fechas exactas, se resuelven al pagar o marcar No trabajo`() {
         loginAdmin()
-        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 30)
-        addMoto("Moto 2", "XYZ789", "Pedro", cuota = 40.0, inicioHaceDias = 30)
+        // v1.9: los días sin pagar se cuentan desde el inicio del contrato (aquí, el día del primer cobro)
+        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 10)
+        addMoto("Moto 2", "XYZ789", "Pedro", cuota = 40.0, inicioHaceDias = 3)
 
         // Moto 1: pagos con huecos el -8, -7 y -4
         payOn("ABC123", d(-10), d(-9), d(-6), d(-5), d(-3), d(-2), d(-1))
@@ -110,7 +111,7 @@ class PaymentsE2ETest : E2EBase() {
     @Test
     fun `desmarcar un pago vuelve a mostrar ese dia sin pagar y lo saca de Caja`() {
         loginAdmin()
-        addMoto("Moto 1", "ABC123", "Juan")
+        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 4)
         payOn("ABC123", d(-4), d(-3), d(-2), d(-1))
         await("sin faltas antes de hoy") { s -> s.missedByPlaca["ABC123"].orEmpty().none { it < today } }
         val ingresos = state().totalIngresos
@@ -157,7 +158,7 @@ class PaymentsE2ETest : E2EBase() {
     @Test
     fun `Avisar pagos desde una fecha anterior al primer cobro agrega esos dias, y automatico los quita`() {
         loginAdmin()
-        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 40)
+        addMoto("Moto 1", "ABC123", "Juan", inicioHaceDias = 5)
         payOn("ABC123", d(-5), d(-4), d(-3), d(-2), d(-1))
         await("sin faltas antes de hoy") { s -> s.missedByPlaca["ABC123"].orEmpty().none { it < today } }
 
