@@ -138,9 +138,11 @@ class PaymentsE2ETest : E2EBase() {
 
         vm.setSelectedDate(fecha)
         await("fecha") { it.selectedDate == fecha }
-        val ingresos = state().totalIngresos
+        val ingresos = settle().totalIngresos
         vm.markAllDailyPayments(true)
-        var st = await("marcar todas") { s -> s.pagosDelDiaSeleccionado.any { it.unitPlaca == "ABC123" && it.pagado } }
+        var st = await("marcar todas") { s ->
+            s.pagosDelDiaSeleccionado.any { it.unitPlaca == "ABC123" && it.pagado } && kotlin.math.abs(s.totalIngresos - (ingresos + 35.0)) < 0.001
+        }
         st = settle()
         assertEquals("Solo Moto 1 debía pagar ese día", 1, st.conteoPagadosHoy)
         assertEquals(35.0, st.totalCobradoHoy, 0.001)
@@ -150,7 +152,8 @@ class PaymentsE2ETest : E2EBase() {
 
         // Desmarcar todas: quita los pagos pero conserva el "No trabajó"
         vm.markAllDailyPayments(false)
-        st = await("desmarcar todas") { s -> s.pagosDelDiaSeleccionado.none { it.pagado } }
+        // Cobros y Caja llegan por flujos distintos: se esperan los dos
+        st = await("desmarcar todas") { s -> s.pagosDelDiaSeleccionado.none { it.pagado } && kotlin.math.abs(s.totalIngresos - ingresos) < 0.001 }
         assertEquals(ingresos, st.totalIngresos, 0.001)
         assertTrue(st.pagosDelDiaSeleccionado.any { it.unitPlaca == "XYZ789" && !it.pagado })
     }

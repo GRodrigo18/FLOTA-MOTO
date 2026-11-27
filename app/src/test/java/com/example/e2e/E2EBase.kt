@@ -68,7 +68,12 @@ abstract class E2EBase {
         while (true) {
             idle()
             val s = vm.uiState.value
-            if (pred(s)) return s
+            if (pred(s)) {
+                // Cada tabla de la base llega por su propio flujo: se deja que lleguen las demás
+                // (Caja, deudas, recordatorios) antes de afirmar, y se confirma que sigue cumpliéndose.
+                val quieto = settle(250)
+                if (pred(quieto)) return quieto
+            }
             if (System.currentTimeMillis() > end) {
                 throw AssertionError(
                     "Tiempo agotado esperando: $what\n" +

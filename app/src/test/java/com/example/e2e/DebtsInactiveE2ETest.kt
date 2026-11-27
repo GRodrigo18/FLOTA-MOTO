@@ -18,10 +18,13 @@ class DebtsInactiveE2ETest : E2EBase() {
     fun `pago parcial crea la deuda, el abono la baja y anular cada registro la deshace`() {
         loginAdmin()
         addMoto("Moto 1", "ABC123", "Juan")
-        val ingresos0 = state().totalIngresos
+        // La garantía inicial entra a Caja por otro flujo: se espera a que llegue
+        val ingresos0 = await("garantía en Caja") { it.totalIngresos >= 200.0 - 0.001 }.totalIngresos
 
         vm.recordPaymentWithRest(unit("ABC123"), 20.0, restoADeuda = true)
-        var st = await("deuda 15") { it.units.first { u -> u.placa == "ABC123" }.deudaTotal == 15.0 }
+        var st = await("deuda 15") {
+            it.units.first { u -> u.placa == "ABC123" }.deudaTotal == 15.0 && kotlin.math.abs(it.totalIngresos - (ingresos0 + 20.0)) < 0.001
+        }
         val pagoHoy = st.dailyPayments.single { it.unitPlaca == "ABC123" && it.fecha == today }
         assertTrue(pagoHoy.pagado)
         assertEquals(20.0, pagoHoy.cuotaMonto, 0.0)
@@ -44,7 +47,10 @@ class DebtsInactiveE2ETest : E2EBase() {
         val abono = st.debtRecords.single { it.tipo == "ABONO" }
 
         vm.deleteDebtRecord(abono)
-        st = await("abono anulado") { s -> s.debtRecords.none { it.tipo == "ABONO" } && s.units.first { it.placa == "ABC123" }.deudaTotal == 15.0 }
+        st = await("abono anulado") { s ->
+            s.debtRecords.none { it.tipo == "ABONO" } && s.units.first { it.placa == "ABC123" }.deudaTotal == 15.0 &&
+                kotlin.math.abs(s.totalIngresos - (ingresos0 + 20.0)) < 0.001
+        }
         assertEquals("El dinero del abono sale de Caja", ingresos0 + 20.0, st.totalIngresos, 0.001)
 
         vm.deleteDebtRecord(st.debtRecords.single { it.tipo == "CARGO" })
@@ -135,7 +141,9 @@ class DebtsInactiveE2ETest : E2EBase() {
         vm.breakContract(unit("XYZ789"))
         val st = await("contrato finalizado") { s ->
             val x = s.units.first { it.placa == "XYZ789" }
-            x.estado == "Inactivo" && x.deudaTotal == 0.0 && x.cliente == "Sin asignar"
+            // Los registros de deuda llegan por otro flujo de la base: se esperan también
+            x.estado == "Inactivo" && x.deudaTotal == 0.0 && x.cliente == "Sin asignar" &&
+                s.debtRecords.any { it.unitPlaca == "XYZ789" && it.tipo == "ANULADO" }
         }
         assertEquals(50.0, st.debtRecords.filter { it.tipo == "ANULADO" }.sumOf { it.monto }, 0.001)
         assertNoAlertsFor(st, "XYZ789")
